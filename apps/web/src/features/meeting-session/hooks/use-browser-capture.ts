@@ -62,7 +62,10 @@ export function useBrowserCapture({
 }) {
   const [capturePhase, setCapturePhase] = useState<CapturePhase>("idle");
   const meetingRef = useRef(meeting);
-  meetingRef.current = meeting;
+
+  useEffect(() => {
+    meetingRef.current = meeting;
+  }, [meeting]);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const cleanupCaptureRef = useRef<(() => void) | null>(null);

@@ -26,7 +26,6 @@ export function CaptureReadiness() {
     <Card title="Browser capture readiness" eyebrow="Pre-flight">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {checks.map((check) => {
-          const Icon = check.icon;
           const ok = check.deriveFrom
             ? captureSupport?.[check.deriveFrom] ?? false
             : captureSupport?.[check.key] ?? false;

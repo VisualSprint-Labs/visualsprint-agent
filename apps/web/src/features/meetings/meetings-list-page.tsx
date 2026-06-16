@@ -1,10 +1,19 @@
 "use client";
 
-import type { MeetingStatus } from "@visualsprint/contracts";
+import type { MeetingStatus, MeetingSummary } from "@visualsprint/contracts";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { LayoutList, PlusCircle, Radio, Clock, CheckCircle2, ArrowUpRight, Users, Calendar } from "lucide-react";
+import {
+  LayoutList,
+  PlusCircle,
+  Radio,
+  Clock,
+  CheckCircle2,
+  ChevronRight,
+  Users,
+  Calendar,
+} from "lucide-react";
 
 import { ThemeWrapper } from "../../components/layout/theme-wrapper";
 import { Button } from "../../components/ui/button";
@@ -15,44 +24,110 @@ import { useMeetings } from "../../hooks/use-meetings";
 import { formatSourceConnector, formatTimestamp } from "../../lib/format";
 import { meetingRouteForStatus } from "../../lib/meeting";
 
-const statusFilters: Array<{ id: MeetingStatus | "all"; label: string; icon: typeof LayoutList }> = [
+const statusFilters: Array<{ id: MeetingStatus | "all"; label: string; icon: typeof LayoutList; count?: number }> = [
   { id: "all", label: "All", icon: LayoutList },
   { id: "draft", label: "Draft", icon: Clock },
   { id: "live", label: "Live", icon: Radio },
   { id: "ended", label: "Ended", icon: CheckCircle2 },
 ];
 
-const statusGradient: Record<string, string> = {
-  live: "from-[var(--status-live)]/10 to-transparent",
-  ended: "from-foreground-muted/10 to-transparent",
-  draft: "from-[var(--status-draft)]/10 to-transparent",
+const statusRank: Record<MeetingStatus, number> = {
+  live: 0,
+  draft: 1,
+  ended: 2,
 };
 
 const container = {
   hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+  show: { opacity: 1, transition: { staggerChildren: 0.04 } },
 };
 
-const cardItem = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const } },
+const rowItem = {
+  hidden: { opacity: 0, y: 8 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] as const } },
 };
+
+function MeetingRow({ meeting }: { meeting: MeetingSummary }) {
+  return (
+    <Link
+      href={meetingRouteForStatus(meeting)}
+      className="group flex items-center gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand/20 hover:bg-surface-2 hover:shadow-md sm:gap-6 sm:p-5"
+    >
+      <div className="hidden shrink-0 sm:block">
+        <div
+          className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${
+            meeting.status === "live"
+              ? "bg-[var(--status-live)]/10 text-[var(--status-live)]"
+              : meeting.status === "ended"
+                ? "bg-surface-muted text-foreground-muted"
+                : "bg-[var(--status-draft)]/10 text-[var(--status-draft)]"
+          }`}
+        >
+          {meeting.status === "live" ? (
+            <Radio size={18} strokeWidth={2} />
+          ) : meeting.status === "ended" ? (
+            <CheckCircle2 size={18} strokeWidth={2} />
+          ) : (
+            <Clock size={18} strokeWidth={2} />
+          )}
+        </div>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-sm font-semibold text-foreground transition group-hover:text-brand sm:text-base">
+          {meeting.title}
+        </h2>
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-foreground-subtle">
+          <span className="inline-flex items-center gap-1.5">
+            <Users size={12} strokeWidth={2} />
+            {meeting.participantCount} participants
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Calendar size={12} strokeWidth={2} />
+            {formatTimestamp(meeting.createdAt)}
+          </span>
+          <span className="hidden sm:inline">{formatSourceConnector(meeting.sourceConnector)}</span>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-3">
+        <StatusPill status={meeting.status} />
+        <ChevronRight
+          size={18}
+          strokeWidth={2}
+          className="text-foreground-subtle transition group-hover:translate-x-0.5 group-hover:text-brand"
+        />
+      </div>
+    </Link>
+  );
+}
 
 export function MeetingsListPage() {
   const [statusFilter, setStatusFilter] = useState<MeetingStatus | "all">("all");
   const { data, isLoading, error } = useMeetings();
-  const meetings = data?.meetings ?? [];
+  const meetings = useMemo(() => data?.meetings ?? [], [data?.meetings]);
+
+  const counts = useMemo(() => {
+    return {
+      all: meetings.length,
+      draft: meetings.filter((m) => m.status === "draft").length,
+      live: meetings.filter((m) => m.status === "live").length,
+      ended: meetings.filter((m) => m.status === "ended").length,
+    };
+  }, [meetings]);
+
   const filteredMeetings = useMemo(
     () =>
-      statusFilter === "all"
+      (statusFilter === "all"
         ? meetings
-        : meetings.filter((meeting) => meeting.status === statusFilter),
+        : meetings.filter((meeting) => meeting.status === statusFilter)
+      ).slice().sort((a, b) => statusRank[a.status] - statusRank[b.status] || b.createdAt.localeCompare(a.createdAt)),
     [meetings, statusFilter],
   );
 
   return (
     <ThemeWrapper theme="paper">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:gap-10 sm:px-8 sm:py-10 lg:px-12">
+      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 py-6 sm:gap-10 sm:px-8 sm:py-10 lg:px-12">
         {/* Header */}
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -78,6 +153,7 @@ export function MeetingsListPage() {
             {statusFilters.map((filter) => {
               const active = statusFilter === filter.id;
               const Icon = filter.icon;
+              const count = counts[filter.id];
               return (
                 <button
                   key={filter.id}
@@ -91,6 +167,11 @@ export function MeetingsListPage() {
                 >
                   <Icon size={14} strokeWidth={2} />
                   {filter.label}
+                  {typeof count === "number" ? (
+                    <span className={`ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-brand/20" : "bg-surface-muted"}`}>
+                      {count}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -113,52 +194,10 @@ export function MeetingsListPage() {
             body="Try another filter or create a new meeting."
           />
         ) : (
-          <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-          >
+          <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-3">
             {filteredMeetings.map((meeting) => (
-              <motion.div key={meeting.id} variants={cardItem}>
-                <Link
-                  href={meetingRouteForStatus(meeting)}
-                  className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-brand/20 hover:shadow-lg"
-                >
-                  {/* top accent gradient */}
-                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${statusGradient[meeting.status] ?? statusGradient.draft}`} />
-                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-base font-bold tracking-tight text-foreground transition group-hover:text-brand sm:text-lg line-clamp-2">
-                      {meeting.title}
-                    </h2>
-                    <ArrowUpRight
-                      size={18}
-                      strokeWidth={2}
-                      className="mt-1 shrink-0 text-foreground-subtle transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand"
-                    />
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-foreground-subtle">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Users size={12} strokeWidth={2} />
-                      {meeting.participantCount} participants
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Calendar size={12} strokeWidth={2} />
-                      {formatTimestamp(meeting.createdAt)}
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-xs text-foreground-subtle">
-                    {formatSourceConnector(meeting.sourceConnector)}
-                  </p>
-
-                  <div className="mt-auto pt-4">
-                    <StatusPill status={meeting.status} />
-                  </div>
-                </Link>
+              <motion.div key={meeting.id} variants={rowItem}>
+                <MeetingRow meeting={meeting} />
               </motion.div>
             ))}
           </motion.div>

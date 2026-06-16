@@ -32,6 +32,7 @@ def _looks_like_secret_manager_resource(value: str) -> bool:
 
 def _resolve_elastic_api_key(
     environ: Mapping[str, str],
+    secret_name: str | None,
 ) -> str | None:
     """Return the Elastic API key value, resolving a Secret Manager resource if needed."""
 
@@ -39,11 +40,6 @@ def _resolve_elastic_api_key(
     if direct_key:
         return direct_key
 
-    secret_name = _get_any(
-        environ,
-        "ELASTICSEARCH_API_KEY_SECRET",
-        "ELASTICSEARCH_API_KEY_SECRET_NAME",
-    )
     if not secret_name:
         return None
 
@@ -72,6 +68,7 @@ class Settings:
     media_service_url: str | None = None
     elasticsearch_url: str | None = None
     elasticsearch_api_key: str | None = None
+    elasticsearch_api_key_secret: str | None = None
     elastic_index_outcomes: str | None = None
     elastic_mcp_server_url: str | None = None
     jira_base_url: str | None = None
@@ -95,12 +92,21 @@ class Settings:
     )
 
     @property
+    def is_dev_mode(self) -> bool:
+        return self.environment.lower() == "development"
+
+    @property
+    def demo_seed_enabled(self) -> bool:
+        """Demo seed is enabled in development or when explicitly opted in."""
+        return self.is_dev_mode
+
+    @property
     def elasticsearch_url_configured(self) -> bool:
         return self.elasticsearch_url is not None
 
     @property
     def elasticsearch_api_key_configured(self) -> bool:
-        return self.elasticsearch_api_key is not None
+        return self.elasticsearch_api_key is not None or self.elasticsearch_api_key_secret is not None
 
     @property
     def elastic_mcp_server_configured(self) -> bool:
@@ -110,7 +116,7 @@ class Settings:
     def elastic_writeback_configured(self) -> bool:
         return bool(
             self.elasticsearch_url
-            and self.elasticsearch_api_key
+            and (self.elasticsearch_api_key or self.elasticsearch_api_key_secret)
             and self.elastic_index_outcomes
         )
 
@@ -141,7 +147,19 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ingest_service_url=_get(source, "VISUALSPRINT_INGEST_SERVICE_URL"),
         media_service_url=_get(source, "VISUALSPRINT_MEDIA_SERVICE_URL"),
         elasticsearch_url=_get(source, "ELASTICSEARCH_URL"),
-        elasticsearch_api_key=_resolve_elastic_api_key(source),
+        elasticsearch_api_key_secret=_get_any(
+            source,
+            "ELASTICSEARCH_API_KEY_SECRET",
+            "ELASTICSEARCH_API_KEY_SECRET_NAME",
+        ),
+        elasticsearch_api_key=_resolve_elastic_api_key(
+            source,
+            _get_any(
+                source,
+                "ELASTICSEARCH_API_KEY_SECRET",
+                "ELASTICSEARCH_API_KEY_SECRET_NAME",
+            ),
+        ),
         elastic_index_outcomes=_get_any(
             source,
             "ELASTIC_INDEX_OUTCOMES",

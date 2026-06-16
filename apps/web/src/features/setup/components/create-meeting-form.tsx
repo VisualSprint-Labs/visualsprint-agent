@@ -3,7 +3,7 @@
 import { sourceConnectors } from "@visualsprint/contracts";
 import type { CreateMeetingRequest } from "@visualsprint/contracts";
 import { useRouter } from "next/navigation";
-import { PlusCircle, Play, PenLine } from "lucide-react";
+import { PlusCircle, Play } from "lucide-react";
 
 import { Card } from "../../../components/ui/card";
 import { Field } from "../../../components/ui/field";

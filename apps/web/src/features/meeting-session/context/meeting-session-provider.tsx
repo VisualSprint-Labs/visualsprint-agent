@@ -43,6 +43,7 @@ import {
   listMeetings,
   rejectActionRecommendation,
   runAgentSmoke,
+  seedDemoMeeting,
   startMeeting,
 } from "../../../lib/api";
 import { useToast } from "../../../components/providers/toast-provider";
@@ -94,6 +95,7 @@ type MeetingSessionContextValue = {
   rejectRecommendation: (id: string) => Promise<void>;
   executeRecommendation: (id: string) => Promise<void>;
   refreshFinalReport: () => Promise<boolean>;
+  loadDemoMeeting: () => Promise<MeetingDetail | null>;
 };
 
 const MeetingSessionContext = createContext<MeetingSessionContextValue | null>(null);
@@ -111,21 +113,6 @@ export function MeetingSessionProvider({
   const { pushToast } = useToast();
   const captureSupport = useCaptureSupport();
 
-  const fail = useCallback(
-    (message: string) => {
-      setError(message);
-      pushToast(message, "error");
-    },
-    [pushToast],
-  );
-
-  const succeed = useCallback(
-    (message: string) => {
-      pushToast(message, "success");
-    },
-    [pushToast],
-  );
-
   const [draft, setDraft] = useState<CreateMeetingRequest>(initialDraft);
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
@@ -140,6 +127,21 @@ export function MeetingSessionProvider({
     useState<AgentInvocationAuditResponse | null>(null);
   const [agentSmokeResult, setAgentSmokeResult] = useState<AgentSmokeResponse | null>(null);
   const [actionRecommendations, setActionRecommendations] = useState<ActionRecommendation[]>([]);
+
+  const fail = useCallback(
+    (message: string) => {
+      setError(message);
+      pushToast(message, "error");
+    },
+    [pushToast],
+  );
+
+  const succeed = useCallback(
+    (message: string) => {
+      pushToast(message, "success");
+    },
+    [pushToast],
+  );
 
   const applyMeeting = useCallback(
     (nextMeeting: MeetingDetail) => {
@@ -269,7 +271,7 @@ export function MeetingSessionProvider({
         }
       }
     })();
-  }, [fail, meeting?.id, meeting?.status]);
+  }, [fail, meeting]);
 
   useEffect(() => {
     const latestChunk = meeting?.recentCaptureChunks[0];
@@ -366,6 +368,29 @@ export function MeetingSessionProvider({
     },
     [applyMeeting, draft, fail, refreshMeetings, succeed],
   );
+
+  const loadDemoMeeting = useCallback(async () => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const response = await seedDemoMeeting();
+      applyMeeting(response.meeting);
+      await refreshMeetings();
+      if (response.meeting.status === "ended") {
+        const reportResponse = await getFinalReport(response.meeting.id);
+        setFinalReport(reportResponse.report);
+        const recommendationsResponse = await getActionRecommendations(response.meeting.id);
+        setActionRecommendations(recommendationsResponse.recommendations);
+      }
+      succeed("Demo meeting loaded.");
+      return response.meeting;
+    } catch (demoError) {
+      fail(getErrorMessage(demoError));
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  }, [applyMeeting, fail, refreshMeetings, succeed]);
 
   const startMeetingSession = useCallback(async () => {
     if (!meeting) {
@@ -581,6 +606,7 @@ export function MeetingSessionProvider({
       rejectRecommendation,
       executeRecommendation,
       refreshFinalReport,
+      loadDemoMeeting,
     }),
     [
       meetingId,
@@ -614,6 +640,7 @@ export function MeetingSessionProvider({
       rejectRecommendation,
       executeRecommendation,
       refreshFinalReport,
+      loadDemoMeeting,
     ],
   );
 

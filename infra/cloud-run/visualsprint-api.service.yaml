@@ -24,9 +24,9 @@ spec:
             - name: VISUALSPRINT_AGENTS_SERVICE_URL
               value: https://visualsprint-agents-REPLACE.a.run.app
             - name: VISUALSPRINT_INGEST_SERVICE_URL
-              value: ""
+              value: https://visualsprint-ingest-530780341550.us-west1.run.app
             - name: VISUALSPRINT_MEDIA_SERVICE_URL
-              value: ""
+              value: https://visualsprint-media-530780341550.us-west1.run.app
             - name: ELASTICSEARCH_URL
               value: https://my-elasticsearch-project-ad6723.es.us-central1.gcp.elastic.cloud
             - name: ELASTICSEARCH_API_KEY

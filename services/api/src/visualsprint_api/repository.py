@@ -9,6 +9,11 @@ from typing import Callable
 from uuid import uuid4
 
 from visualsprint_api.config import settings
+from visualsprint_api.demo_seed import (
+    build_demo_action_recommendations,
+    build_demo_final_report,
+    build_demo_meeting,
+)
 from visualsprint_api.elastic_client import (
     search_prior_outcomes_in_elasticsearch,
     upsert_indexed_outcomes_to_elasticsearch,
@@ -188,6 +193,30 @@ class MeetingStore:
             self._final_reports.clear()
             self._indexed_outcomes.clear()
             self._action_recommendations.clear()
+
+    def seed_demo_meeting(self) -> MeetingDetail:
+        """Create a fully populated demo meeting for hackathon recordings.
+
+        Bypasses the real capture pipeline and directly injects realistic transcripts,
+        screen events, reasoning outputs, a final report, and action recommendations.
+        """
+
+        with self._lock:
+            meeting = build_demo_meeting()
+            report = build_demo_final_report(meeting.id, meeting.endedAt or _utc_now())
+            recommendations = build_demo_action_recommendations(meeting.id)
+
+            self._meetings[meeting.id] = meeting
+            self._meeting_revisions[meeting.id] = 0
+            self._final_reports[meeting.id] = report
+
+            for recommendation in recommendations:
+                self._action_recommendations[(meeting.id, recommendation.id)] = recommendation
+                meeting.recentActionRecommendations.append(recommendation)
+
+            meeting.metrics.actionRecommendationsCount = len(recommendations)
+            self._mark_meeting_updated(meeting.id)
+            return meeting.model_copy(deep=True)
 
     def list_meetings(self) -> list[MeetingSummary]:
         with self._lock:

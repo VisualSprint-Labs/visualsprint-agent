@@ -64,7 +64,7 @@ def build_reasoning_agent_scaffold() -> AdkAgentScaffold:
         tools=(search_prior_outcomes, register_outputs),
         output_key="reasoning_run_response",
         include_contents="none",
-        enforce_output_schema=True,
+        enforce_output_schema=False,
         notes=(
             "Expose memory retrieval and output registration tools for ADK deploy wiring. "
             "The control plane may also pre-inject memoryMatches before reasoning runs.",

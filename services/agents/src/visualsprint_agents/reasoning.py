@@ -67,34 +67,35 @@ def run_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse:
         empty_cloud_response = (
             cloud_response is not None and not _reasoning_response_has_content(cloud_response)
         )
+        is_vertex = settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
+        if is_vertex and empty_cloud_response:
+            detail = "Configured Vertex AI runtime returned no reasoning output."
+        elif is_vertex:
+            detail = "Configured Vertex AI runtime was unavailable."
+        elif empty_cloud_response:
+            detail = "Configured bridge returned no reasoning output."
+        else:
+            detail = "Configured bridge was unavailable."
+
         audit_store.record(
             agent_kind="reasoning",
-            execution_mode=(
-                "vertex_ai_fallback"
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "bridge_fallback"
-            ),
+            execution_mode="vertex_ai_fallback" if is_vertex else "bridge_fallback",
             status="fallback",
             target_agent_id=(
                 settings.reasoning_engine_resource_name
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
+                if is_vertex
                 else settings.reasoning_agent_id
             ),
             request_key=payload.clientChunkId,
-            detail=(
-                "Configured Vertex AI runtime returned no reasoning output."
-                if empty_cloud_response
-                and settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "Configured bridge returned no reasoning output."
-                if empty_cloud_response
-                else "Configured Vertex AI runtime was unavailable."
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "Configured bridge was unavailable."
-            ),
+            detail=detail,
         )
-        # Return an empty response instead of fake mock data so the deterministic
-        # control plane can apply its own fallback based on real chunk context.
-        return _empty_reasoning_response(payload)
+
+        # Vertex empty/failure is treated as a real "no durable signals" result so
+        # the control plane does not hallucinate. Bridge failures fall back to the
+        # deterministic template so the UI stays usable.
+        if is_vertex:
+            return _empty_reasoning_response(payload)
+        return _run_mock_reasoning_agent(payload)
 
     audit_store.record(
         agent_kind="reasoning",

@@ -1,0 +1,35 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: visualsprint-media
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5"
+    spec:
+      serviceAccountName: visualsprint-media@visualsprint-agent.iam.gserviceaccount.com
+      containers:
+        - image: us-west1-docker.pkg.dev/visualsprint-agent/visualsprint/media:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: VISUALSPRINT_ENV
+              value: production
+            - name: VISUALSPRINT_TRACK
+              value: elastic
+            - name: GOOGLE_CLOUD_PROJECT
+              value: visualsprint-agent
+            - name: GOOGLE_CLOUD_LOCATION
+              value: us-west1
+            - name: GCS_BUCKET
+              value: visualsprint-capture-media
+            - name: GEMINI_VISION_MODEL
+              value: gemini-2.5-flash
+            - name: FRAME_SAMPLE_INTERVAL_SECONDS
+              value: "2"
+            - name: VISUALSPRINT_ALLOWED_ORIGINS
+              value: https://app.visualsprint.dev

@@ -16,7 +16,6 @@ import {
   OctagonAlert,
   HelpCircle,
   BrainCircuit,
-  Sparkles,
 } from "lucide-react";
 
 import {

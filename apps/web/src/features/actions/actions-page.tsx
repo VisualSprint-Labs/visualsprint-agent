@@ -1,8 +1,8 @@
 "use client";
 
-import type { ActionRecommendation } from "@visualsprint/contracts";
+import type { ActionRecommendation, ActionRecommendationStatus } from "@visualsprint/contracts";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -10,10 +10,10 @@ import {
   Zap,
   Ticket,
   MessageSquare,
-  TrendingUp,
-  AlertTriangle,
   ListChecks,
   Sparkles,
+  Clock,
+  PlayCircle,
 } from "lucide-react";
 
 import { Card } from "../../components/ui/card";
@@ -33,6 +33,15 @@ const cardItem = {
   hidden: { opacity: 0, y: 8 },
   show: { opacity: 1, y: 0, transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] as const } },
 };
+
+type FilterTab = "pending" | "approved" | "completed" | "all";
+
+const filterTabs: Array<{ id: FilterTab; label: string; icon: typeof Clock; match: (status: ActionRecommendationStatus) => boolean }> = [
+  { id: "pending", label: "Pending", icon: Clock, match: (s) => s === "pending" },
+  { id: "approved", label: "Approved", icon: CheckCircle2, match: (s) => s === "approved" },
+  { id: "completed", label: "Completed", icon: PlayCircle, match: (s) => s === "executed" || s === "failed" || s === "rejected" },
+  { id: "all", label: "All", icon: ListChecks, match: () => true },
+];
 
 function RecommendationCard({
   recommendation,
@@ -82,7 +91,9 @@ function RecommendationCard({
                 ? "bg-[var(--status-draft)]/15 text-[var(--status-draft)]"
                 : recommendation.status === "approved"
                   ? "bg-[var(--status-live)]/15 text-[var(--status-live)]"
-                  : "bg-surface-muted text-foreground-muted"
+                  : recommendation.status === "executed"
+                    ? "bg-[var(--status-success)]/15 text-[var(--status-success)]"
+                    : "bg-surface-muted text-foreground-muted"
             }`}
           >
             {recommendation.status}
@@ -103,32 +114,16 @@ function RecommendationCard({
       <div className="mt-5 flex flex-wrap gap-2">
         {recommendation.status === "pending" ? (
           <>
-            <Button
-              size="sm"
-              leftIcon={<CheckCircle2 size={14} strokeWidth={2} />}
-              disabled={isBusy}
-              onClick={onApprove}
-            >
+            <Button size="sm" leftIcon={<CheckCircle2 size={14} strokeWidth={2} />} disabled={isBusy} onClick={onApprove}>
               Approve
             </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={<XCircle size={14} strokeWidth={2} />}
-              disabled={isBusy}
-              onClick={onReject}
-            >
+            <Button size="sm" variant="secondary" leftIcon={<XCircle size={14} strokeWidth={2} />} disabled={isBusy} onClick={onReject}>
               Reject
             </Button>
           </>
         ) : null}
         {recommendation.status === "approved" ? (
-          <Button
-            size="sm"
-            leftIcon={<Zap size={14} strokeWidth={2} />}
-            disabled={isBusy}
-            onClick={onExecute}
-          >
+          <Button size="sm" leftIcon={<Zap size={14} strokeWidth={2} />} disabled={isBusy} onClick={onExecute}>
             Execute
           </Button>
         ) : null}
@@ -139,6 +134,7 @@ function RecommendationCard({
 
 export function ActionsPage() {
   const router = useRouter();
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("pending");
   const {
     meeting,
     actionRecommendations,
@@ -163,6 +159,17 @@ export function ActionsPage() {
     }
   }, [meeting, router]);
 
+  const pendingCount = actionRecommendations.filter((item) => item.status === "pending").length;
+  const approvedCount = actionRecommendations.filter((item) => item.status === "approved").length;
+  const completedCount = actionRecommendations.filter(
+    (item) => item.status === "executed" || item.status === "failed" || item.status === "rejected",
+  ).length;
+
+  const filteredRecommendations = useMemo(() => {
+    const tab = filterTabs.find((t) => t.id === activeFilter);
+    return actionRecommendations.filter((rec) => tab?.match(rec.status));
+  }, [actionRecommendations, activeFilter]);
+
   if (!meeting) {
     return <PageSkeleton />;
   }
@@ -170,16 +177,6 @@ export function ActionsPage() {
   if (meeting.status === "draft" || meeting.status === "live") {
     return <PageSkeleton />;
   }
-
-  const pendingCount = actionRecommendations.filter(
-    (item) => item.status === "pending",
-  ).length;
-  const approvedCount = actionRecommendations.filter(
-    (item) => item.status === "approved",
-  ).length;
-  const completedCount = actionRecommendations.filter(
-    (item) => item.status === "executed" || item.status === "failed",
-  ).length;
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:gap-10 sm:px-8 sm:py-10 lg:px-12">
@@ -189,12 +186,9 @@ export function ActionsPage() {
             <ListChecks size={12} strokeWidth={2} />
             {meeting.title}
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-balance sm:text-4xl lg:text-5xl">
-            Action recommendations
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-balance sm:text-4xl lg:text-5xl">Action recommendations</h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-foreground-muted sm:text-base">
-            Review Jira and Slack suggestions generated from the meeting report. Approve before
-            execution.
+            Review Jira and Slack suggestions generated from the meeting report. Approve before execution.
           </p>
         </div>
       </header>
@@ -209,16 +203,43 @@ export function ActionsPage() {
 
       <Card title="Approval portal" eyebrow="Post-meeting actions">
         <div className="space-y-5">
-          <Button
-            variant="secondary"
-            disabled={isBusy || meeting.status !== "ended"}
-            leftIcon={<Sparkles size={16} strokeWidth={2} />}
-            onClick={() => {
-              void generateRecommendations();
-            }}
-          >
-            Generate recommendations
-          </Button>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {filterTabs.map((tab) => {
+                const active = activeFilter === tab.id;
+                const Icon = tab.icon;
+                const count = actionRecommendations.filter((rec) => tab.match(rec.status)).length;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveFilter(tab.id)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                      active
+                        ? "bg-brand/10 text-brand shadow-sm ring-1 ring-brand/10"
+                        : "border border-border bg-surface text-foreground-muted hover:text-foreground hover:bg-surface-2"
+                    }`}
+                  >
+                    <Icon size={14} strokeWidth={2} />
+                    {tab.label}
+                    <span className={`ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-brand/20" : "bg-surface-muted"}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              variant="secondary"
+              disabled={isBusy || meeting.status !== "ended"}
+              leftIcon={<Sparkles size={16} strokeWidth={2} />}
+              onClick={() => {
+                void generateRecommendations();
+              }}
+            >
+              Generate
+            </Button>
+          </div>
 
           {actionRecommendations.length === 0 ? (
             <EmptyState
@@ -229,14 +250,11 @@ export function ActionsPage() {
                   : "End the meeting first to generate action recommendations."
               }
             />
+          ) : filteredRecommendations.length === 0 ? (
+            <EmptyState title={`No ${activeFilter} recommendations`} body="Try another filter or generate new recommendations." />
           ) : (
-            <motion.div
-              variants={container}
-              initial="hidden"
-              animate="show"
-              className="grid gap-3 sm:grid-cols-2"
-            >
-              {actionRecommendations.map((rec) => (
+            <motion.div variants={container} initial="hidden" animate="show" className="grid gap-3 sm:grid-cols-2">
+              {filteredRecommendations.map((rec) => (
                 <RecommendationCard
                   key={rec.id}
                   isBusy={isBusy}

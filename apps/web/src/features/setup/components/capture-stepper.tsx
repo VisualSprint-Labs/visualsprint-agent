@@ -2,7 +2,7 @@
 
 import { captureStages } from "@visualsprint/contracts";
 import type { MeetingDetail } from "@visualsprint/contracts";
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 
 function stageState(
   stageId: string,
