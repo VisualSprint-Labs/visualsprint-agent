@@ -18,10 +18,25 @@ def _get(environ: Mapping[str, str], key: str) -> str | None:
     return value.strip() if value and value.strip() else None
 
 
+# Unfilled deployment-template placeholders that must never be treated as real
+# resource names. Historically `VISUALSPRINT_REASONING_ENGINE_RESOURCE_NAME` shipped
+# as ".../reasoningEngines/REASONING_ENGINE_ID" and shadowed the real alias below it,
+# silently pointing the service at a non-existent engine.
+_PLACEHOLDER_TOKENS = (
+    "REASONING_ENGINE_ID",
+    "SUMMARY_ENGINE_ID",
+    "ACTION_ENGINE_ID",
+)
+
+
+def _is_placeholder(value: str) -> bool:
+    return any(token in value for token in _PLACEHOLDER_TOKENS)
+
+
 def _get_any(environ: Mapping[str, str], *keys: str) -> str | None:
     for key in keys:
         value = _get(environ, key)
-        if value is not None:
+        if value is not None and not _is_placeholder(value):
             return value
     return None
 

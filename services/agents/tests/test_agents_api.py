@@ -281,10 +281,10 @@ def test_adk_blueprints_match_repo_contracts():
     summary_blueprint = build_summary_agent_blueprint()
 
     assert reasoning_blueprint.input_contract == "ChunkInsight"
-    assert reasoning_blueprint.output_contract == "RegisterAgentOutputsRequest"
+    assert reasoning_blueprint.output_contract == "ReasoningRunResponse"
     assert len(reasoning_blueprint.tools) == 2
     assert summary_blueprint.input_contract == "MeetingSummaryPacket"
-    assert summary_blueprint.output_contract == "FinalReport"
+    assert summary_blueprint.output_contract == "FinalReportDraft"
     assert len(summary_blueprint.tools) == 1
 
 
@@ -298,11 +298,11 @@ def test_adk_scaffolds_export_schema_and_tool_alignment():
         "search_prior_outcomes",
         "register_outputs",
     ]
-    assert reasoning_scaffold.enforce_output_schema is False
+    assert reasoning_scaffold.enforce_output_schema is True
     assert summary_scaffold.input_schema["title"] == "SummaryPacketRequest"
     assert summary_scaffold.output_schema["title"] == "FinalReportDraft"
     assert [tool.__name__ for tool in summary_scaffold.tools] == ["finalize_report"]
-    assert summary_scaffold.enforce_output_schema is False
+    assert summary_scaffold.enforce_output_schema is True
 
 
 def test_adk_root_agents_build_either_real_adk_agents_or_scaffolds():
