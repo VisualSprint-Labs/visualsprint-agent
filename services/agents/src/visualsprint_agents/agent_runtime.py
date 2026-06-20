@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import sys
 from urllib import error, request
 
 from visualsprint_agents.config import settings
+
+
+def _log(msg: str) -> None:
+    print(f"[agents] {msg}", file=sys.stderr, flush=True)
 from visualsprint_agents.models import (
     ActionAgentRequest,
     ActionAgentResponse,
@@ -33,10 +38,12 @@ def invoke_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse
             return None
         output_payload = extract_vertex_structured_output(response_payload)
         if output_payload is None:
+            _log(f"Vertex reasoning: could not extract structured output from response: {str(response_payload)[:300]}")
             return None
         try:
             return ReasoningRunResponse.model_validate(output_payload)
-        except ValueError:
+        except ValueError as exc:
+            _log(f"Vertex reasoning: ReasoningRunResponse validation failed — {exc}")
             return None
 
     if not settings.cloud_adapter_ready or not settings.reasoning_agent_endpoint_url:
@@ -162,7 +169,15 @@ def _post_json(
             timeout=settings.agent_request_timeout_seconds,
         )
         return json.loads(response.read().decode("utf-8"))
-    except (error.URLError, error.HTTPError, json.JSONDecodeError):
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:500]
+        _log(f"bridge HTTP {exc.code} {exc.reason} — {body}")
+        return None
+    except error.URLError as exc:
+        _log(f"bridge URL error — {exc.reason}")
+        return None
+    except json.JSONDecodeError as exc:
+        _log(f"bridge JSON decode error — {exc}")
         return None
 
 
@@ -181,6 +196,7 @@ def _query_vertex_reasoning_engine(
         "classMethod": "query",
         "input": input_payload,
     }
+    _log(f"Vertex query → {url}")
     try:
         response = request.urlopen(
             request.Request(
@@ -194,8 +210,18 @@ def _query_vertex_reasoning_engine(
             ),
             timeout=settings.agent_request_timeout_seconds,
         )
-        return json.loads(response.read().decode("utf-8"))
-    except (error.URLError, error.HTTPError, json.JSONDecodeError):
+        result = json.loads(response.read().decode("utf-8"))
+        _log(f"Vertex response keys: {list(result.keys())}")
+        return result
+    except error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")[:500]
+        _log(f"Vertex HTTP {exc.code} {exc.reason} — {body_text}")
+        return None
+    except error.URLError as exc:
+        _log(f"Vertex URL error — {exc.reason}")
+        return None
+    except json.JSONDecodeError as exc:
+        _log(f"Vertex JSON decode error — {exc}")
         return None
 
 

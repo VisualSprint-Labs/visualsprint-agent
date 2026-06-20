@@ -429,3 +429,9 @@ docs/             # supplementary documentation
 * [Elastic Agent Builder MCP server docs](https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/mcp-server/)
 * [Cloud Run quickstart](https://cloud.google.com/run/docs/quickstarts)
 * [Secret Manager](https://cloud.google.com/secret-manager/docs)
+
+---
+
+## License
+
+VisualSprint is open source under the [Apache License 2.0](LICENSE) (SPDX: `Apache-2.0`), an OSI-approved license that permits commercial use.

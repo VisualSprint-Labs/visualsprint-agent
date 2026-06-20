@@ -14,23 +14,59 @@ from visualsprint_agents.config import settings
 from visualsprint_agents.models import ChunkInsightRequest, ReasoningRunResponse
 
 
+_REASONING_OUTPUT_SCHEMA = """\
+Return a single JSON object — no markdown, no code fences, no explanation:
+{
+  "clientChunkId": "<value from input>",
+  "decisions": [
+    {"title": "one-line decision statement", "rationale": "why the team chose this", "speakerLabel": "who drove it"}
+  ],
+  "commitments": [
+    {"ownerLabel": "person who owns it", "action": "what they will do", "dueHint": "when, e.g. end-of-sprint"}
+  ],
+  "blockers": [
+    {"summary": "what is blocked", "severity": "low|medium|high", "ownerLabel": "owner or unknown"}
+  ],
+  "openQuestions": [
+    {"question": "the unresolved question", "speakerLabel": "who raised it"}
+  ],
+  "memoryMatches": [],
+  "resolvedDecisionIds": [],
+  "resolvedCommitmentIds": [],
+  "resolvedBlockerIds": [],
+  "resolvedOpenQuestionIds": []
+}
+Omit array items for types with no evidence. Keep all nine keys present.\
+"""
+
+
 def build_reasoning_agent_blueprint() -> AgentBlueprint:
     return AgentBlueprint(
         agent_id="visualsprint_reasoning_agent",
         display_name="VisualSprint Reasoning Agent",
         goal=(
-            "Turn assembled chunk context into durable structured outputs while "
-            "avoiding duplicate or weak signals."
+            "Extract durable decisions, commitments, blockers, and open questions "
+            "from meeting chunk context and emit them as structured JSON."
         ),
         input_contract="ChunkInsight",
-        output_contract="RegisterAgentOutputsRequest",
+        output_contract="ReasoningRunResponse",
         instructions=(
-            "Read transcript and screen evidence together before deciding whether a signal is durable.",
-            "Prefer updates, resolutions, or reopen events over duplicate net-new records when the running state already contains the issue.",
-            "Use historical retrieval before assigning recurring or reopened memory relations.",
-            "Treat backend-injected memoryMatches as pre-searched historical context and only call search_prior_outcomes when you need additional comparison depth.",
-            "Return schema-valid structured outputs only.",
-            "Do not invent evidence that is not present in the supplied chunk context.",
+            "The input JSON contains `focusSummary` (a plain-text digest of this chunk), "
+            "`focusAreas` (pre-identified signals with recordType, summary, detail), "
+            "and optionally `transcriptSegments` (timestamped speaker utterances). "
+            "Use all three as your evidence base.",
+            "Each `focusAreas` item is a confirmed signal: map it directly to the matching "
+            "output array. `decision` → decisions[], `commitment` → commitments[], "
+            "`blocker` → blockers[], `open_question` → openQuestions[].",
+            "Also extract any additional clear decisions, commitments, blockers, or open "
+            "questions you find in `transcriptSegments` that are not already covered by focusAreas.",
+            "For `speakerLabel` and `ownerLabel`: use names from the transcript if present, "
+            "otherwise use 'unknown'.",
+            "Prefer updates or resolutions over duplicate new records when the running state "
+            "already contains the issue.",
+            "Only call `search_prior_outcomes` when you need historical depth beyond what "
+            "memoryMatches already provide.",
+            _REASONING_OUTPUT_SCHEMA,
         ),
         tools=(
             SEARCH_PRIOR_OUTCOMES_TOOL,
@@ -62,7 +98,7 @@ def build_reasoning_agent_scaffold() -> AdkAgentScaffold:
         tools=(search_prior_outcomes, register_outputs),
         output_key="reasoning_run_response",
         include_contents="none",
-        enforce_output_schema=False,
+        enforce_output_schema=True,
         notes=(
             "Expose memory retrieval and output registration tools for ADK deploy wiring. "
             "The control plane may also pre-inject memoryMatches before reasoning runs.",

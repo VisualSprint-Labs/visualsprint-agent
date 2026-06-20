@@ -359,6 +359,8 @@ class VisualSprintReasoningEngine:
         reasoningChecklist: list | None = None,
         focusAreas: list | None = None,
         memoryMatches: list | None = None,
+        transcriptSegments: list | None = None,
+        screenEvents: list | None = None,
         **_ignored: Any,
     ) -> dict:
         payload = {
@@ -371,6 +373,8 @@ class VisualSprintReasoningEngine:
             "reasoningChecklist": reasoningChecklist or [],
             "focusAreas": focusAreas or [],
             "memoryMatches": memoryMatches or [],
+            "transcriptSegments": transcriptSegments or [],
+            "screenEvents": screenEvents or [],
         }
         validated = ChunkInsightRequest.model_validate(payload)
         serialized = validated.model_dump(mode="json")

@@ -199,9 +199,15 @@ def run_chunk_reasoning(insight: ChunkInsight) -> RegisterAgentOutputsRequest | 
         return None
 
     try:
+        payload = insight.model_dump(mode="json")
+        # Hoist transcript/screen into top-level fields so the agents service
+        # model passes them through to Vertex instead of dropping them.
+        chunk_ctx = payload.get("chunkContext") or {}
+        payload.setdefault("transcriptSegments", chunk_ctx.get("transcriptSegments") or [])
+        payload.setdefault("screenEvents", chunk_ctx.get("screenEvents") or [])
         response_payload = _post_json(
             f"{settings.agents_service_url.rstrip('/')}/api/reasoning/chunks/run",
-            insight.model_dump(mode="json"),
+            payload,
         )
         return RegisterAgentOutputsRequest.model_validate(response_payload)
     except (ValueError, error.URLError, error.HTTPError):

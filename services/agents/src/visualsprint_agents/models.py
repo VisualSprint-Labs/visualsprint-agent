@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -62,6 +62,8 @@ class ChunkInsightRequest(BaseModel):
     reasoningChecklist: list[str] = Field(default_factory=list)
     focusAreas: list[ChunkInsightFocus] = Field(default_factory=list)
     memoryMatches: list[AgentMemoryMatchInput] = Field(default_factory=list)
+    transcriptSegments: list[Any] = Field(default_factory=list)
+    screenEvents: list[Any] = Field(default_factory=list)
 
 
 class AgentDecisionInput(BaseModel):
