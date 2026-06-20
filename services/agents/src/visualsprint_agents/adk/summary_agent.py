@@ -11,6 +11,24 @@ from visualsprint_agents.config import settings
 from visualsprint_agents.models import FinalReportDraft, SummaryPacketRequest
 
 
+_SUMMARY_OUTPUT_SCHEMA = """\
+Return a single JSON object — no markdown, no code fences, no prose:
+{
+  "meetingId": "<value from input meetingId>",
+  "generatedAt": "<current time as ISO-8601, e.g. 2026-06-20T10:00:00Z>",
+  "executiveSummary": "<2-4 sentence narrative of what the meeting decided, who committed to what, and which risks remain open — write this yourself, do NOT copy draftExecutiveSummary verbatim>",
+  "decisions": [{"title": "...", "rationale": "...", "speakerLabel": "...", "status": "open|updated|resolved|reopened"}],
+  "commitments": [{"ownerLabel": "...", "action": "...", "dueHint": "...", "status": "open|updated|resolved|reopened"}],
+  "blockers": [{"summary": "...", "severity": "low|medium|high", "ownerLabel": "...", "status": "open|updated|resolved|reopened"}],
+  "openQuestions": [{"question": "...", "speakerLabel": "...", "status": "open|updated|resolved|reopened"}],
+  "memoryHighlights": [{"summary": "...", "relation": "new|recurring|reopened|resolved_previously", "score": 0.0}]
+}
+Copy the decisions, commitments, blockers, and openQuestions arrays through from the
+input packet (preserving each record's status). The executiveSummary is the field you
+must actually author. Keep all keys present.\
+"""
+
+
 def build_summary_agent_blueprint() -> AgentBlueprint:
     return AgentBlueprint(
         agent_id="visualsprint_summary_agent",
@@ -20,13 +38,16 @@ def build_summary_agent_blueprint() -> AgentBlueprint:
             "report that preserves durable outcomes and unresolved risks."
         ),
         input_contract="MeetingSummaryPacket",
-        output_contract="FinalReport",
+        output_contract="FinalReportDraft",
         instructions=(
-            "Summarize durable outcomes rather than replaying the full discussion.",
+            "Write a real executiveSummary: a concise narrative of durable outcomes, "
+            "not a replay of the full discussion and not a copy of draftExecutiveSummary.",
             "Keep commitments explicit with owners and due hints when present.",
             "Preserve unresolved blockers and open questions instead of hiding them in prose.",
+            "Carry the decisions, commitments, blockers, and openQuestions arrays through "
+            "from the input packet, preserving each record's status field.",
             "Use historical memory only when it changes confidence, priority, or urgency.",
-            "Return a schema-valid final report payload.",
+            _SUMMARY_OUTPUT_SCHEMA,
         ),
         tools=(FINALIZE_REPORT_TOOL,),
     )
@@ -55,7 +76,7 @@ def build_summary_agent_scaffold() -> AdkAgentScaffold:
         tools=(finalize_report,),
         output_key="final_report_draft",
         include_contents="none",
-        enforce_output_schema=False,
+        enforce_output_schema=True,
         notes=(
             "Expose finalize_report for ADK deploy wiring while the control plane "
             "continues to own deterministic persistence.",

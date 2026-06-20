@@ -10,6 +10,36 @@ from visualsprint_agents.config import settings
 from visualsprint_agents.models import ActionAgentRequest, ActionAgentResponse
 
 
+_ACTION_OUTPUT_SCHEMA = """\
+Return a single JSON object — no markdown, no code fences, no prose:
+{
+  "meetingId": "<value from input meetingId>",
+  "recommendations": [
+    {
+      "type": "jira_create_issue | jira_update_issue | jira_resolve_issue | slack_post_summary | slack_broadcast_decision | slack_alert_blocker | slack_remind_commitment | slack_notify_resolution",
+      "urgency": "critical | high | medium | low",
+      "confidence": 0.0,
+      "jiraDetails": {
+        "action": "create_issue | update_issue | resolve_issue",
+        "issueType": "task | story | bug",
+        "title": "...",
+        "description": "...",
+        "priority": "lowest | low | medium | high | highest",
+        "ownerLabel": "name or 'not mentioned'",
+        "evidence": ["short quote from the report"],
+        "confidence": 0.0
+      },
+      "slackDetails": null,
+      "evidence": ["short quote from the report"]
+    }
+  ]
+}
+Set jiraDetails for jira_* types (slackDetails null) and slackDetails for slack_*
+types (jiraDetails null). A slackDetails object is:
+{"type": "post_summary | broadcast_decision | alert_blocker | remind_commitment | notify_resolution", "channel": "name or 'not specified'", "title": "...", "message": "...", "evidence": ["..."], "confidence": 0.0}\
+"""
+
+
 def build_action_agent_blueprint() -> AgentBlueprint:
     return AgentBlueprint(
         agent_id="visualsprint_action_agent",
@@ -21,17 +51,21 @@ def build_action_agent_blueprint() -> AgentBlueprint:
         input_contract="ActionAgentRequest",
         output_contract="ActionAgentResponse",
         instructions=(
-            "Only suggest actions when explicit evidence exists in the report.",
-            "For Jira: create Task for implementation commitments, Story for product features, "
-            "Bug for errors, Update when an existing issue is referenced, Resolve only when "
+            "Produce a recommendation for every actionable signal in the report. A commitment "
+            "with an owner is a jira_create_issue (task); a reported error or failing check is a "
+            "jira_create_issue (bug); a high-severity blocker is also a slack_alert_blocker; "
+            "significant decisions warrant slack_broadcast_decision; an ended meeting warrants "
+            "slack_post_summary. Do not return an empty list when the report contains "
+            "decisions, commitments, or blockers.",
+            "Anchor every recommendation in the report — quote the relevant decision, commitment, "
+            "or blocker in the evidence array. Do not fabricate signals that are not in the report.",
+            "For Jira: Task for implementation commitments, Story for product features, Bug for "
+            "errors, update_issue when an existing issue is referenced, resolve_issue only when "
             "completion is explicitly confirmed.",
-            "For Slack: post Meeting Summary at close, broadcast significant decisions, "
-            "alert high-severity blockers affecting multiple teams, remind commitments "
-            "with owners, notify when critical blockers are resolved.",
-            "Assign owner_label only when explicitly mentioned; otherwise use 'not mentioned'.",
-            "Rank urgency based on severity, number of affected teams, and explicit deadlines.",
-            "Assign confidence 0.0-1.0 based on evidence strength; never invent evidence.",
-            "Return schema-valid structured recommendations only.",
+            "Set ownerLabel only when explicitly mentioned; otherwise use 'not mentioned'.",
+            "Rank urgency from severity, number of affected teams, and explicit deadlines.",
+            "Assign confidence 0.0-1.0 from evidence strength.",
+            _ACTION_OUTPUT_SCHEMA,
         ),
         tools=(CREATE_ACTION_RECOMMENDATIONS_TOOL,),
     )
