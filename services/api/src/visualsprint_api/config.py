@@ -46,6 +46,10 @@ class Settings:
     slack_bot_token_secret: str | None = None
     slack_default_channel: str | None = None
     service_request_timeout_seconds: float = 0.5
+    google_cloud_project: str | None = None
+    google_cloud_location: str = "us-central1"
+    vision_model: str = "gemini-2.5-flash"
+    media_vision_timeout_seconds: float = 30.0
     supported_tracks: tuple[str, ...] = (
         "arize",
         "elastic",
@@ -58,6 +62,11 @@ class Settings:
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     )
+
+    @property
+    def media_vision_configured(self) -> bool:
+        """True when a real Gemini multimodal call can replace the screen/transcript stubs."""
+        return self.google_cloud_project is not None
 
     @property
     def elasticsearch_url_configured(self) -> bool:
@@ -125,6 +134,21 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         slack_default_channel=_get(source, "SLACK_DEFAULT_CHANNEL"),
         service_request_timeout_seconds=float(
             source.get("VISUALSPRINT_SERVICE_TIMEOUT_SECONDS", "0.5")
+        ),
+        google_cloud_project=_get_any(
+            source,
+            "VISUALSPRINT_GOOGLE_CLOUD_PROJECT_ID",
+            "GOOGLE_CLOUD_PROJECT",
+            "PROJECT_ID",
+        ),
+        google_cloud_location=source.get(
+            "VISUALSPRINT_GOOGLE_CLOUD_LOCATION", "us-central1"
+        ).strip()
+        or "us-central1",
+        vision_model=source.get("VISUALSPRINT_VISION_MODEL", "gemini-2.5-flash").strip()
+        or "gemini-2.5-flash",
+        media_vision_timeout_seconds=float(
+            source.get("VISUALSPRINT_MEDIA_VISION_TIMEOUT_SECONDS", "30.0")
         ),
         allowed_origins=tuple(
             _split_csv(source.get("VISUALSPRINT_ALLOWED_ORIGINS"))

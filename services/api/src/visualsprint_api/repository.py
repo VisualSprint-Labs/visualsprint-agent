@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import Lock
@@ -9,6 +11,7 @@ from typing import Callable
 from uuid import uuid4
 
 from visualsprint_api.config import settings
+from visualsprint_api.vision_pipeline import analyze_chunk_media
 from visualsprint_api.elastic_client import (
     search_prior_outcomes_in_elasticsearch,
     upsert_indexed_outcomes_to_elasticsearch,
@@ -34,6 +37,7 @@ from visualsprint_api.models import (
     ChunkContext,
     ChunkInsight,
     CompleteCaptureChunkUploadRequest,
+    ProcessingSourceMode,
     CommitmentRecord,
     CreateMeetingRequest,
     DecisionRecord,
@@ -155,6 +159,9 @@ class MeetingStore:
     _chunk_context_by_client_id: dict[tuple[str, str], ChunkContext] = field(
         default_factory=dict
     )
+    _chunk_media_by_client_id: dict[tuple[str, str], tuple[bytes, str | None]] = field(
+        default_factory=dict
+    )
     _meeting_revisions: dict[str, int] = field(default_factory=dict)
     _final_reports: dict[str, FinalReport] = field(default_factory=dict)
     _indexed_outcomes: dict[tuple[str, str], IndexedOutcomeDocument] = field(default_factory=dict)
@@ -170,6 +177,7 @@ class MeetingStore:
             self._meetings.clear()
             self._chunks_by_client_id.clear()
             self._chunk_context_by_client_id.clear()
+            self._chunk_media_by_client_id.clear()
             self._meeting_revisions.clear()
             self._final_reports.clear()
             self._indexed_outcomes.clear()
@@ -717,6 +725,22 @@ class MeetingStore:
                 chunk,
             )
 
+    def _store_chunk_media(
+        self,
+        chunk_key: tuple[str, str],
+        payload: CompleteCaptureChunkUploadRequest,
+    ) -> None:
+        """Decode and stash the uploaded chunk media for the vision pass."""
+
+        if not payload.mediaBase64:
+            return
+        try:
+            media_bytes = base64.b64decode(payload.mediaBase64, validate=False)
+        except (ValueError, binascii.Error):
+            return
+        if media_bytes:
+            self._chunk_media_by_client_id[chunk_key] = (media_bytes, payload.mediaMimeType)
+
     def complete_capture_chunk_upload(
         self,
         meeting_id: str,
@@ -746,6 +770,7 @@ class MeetingStore:
                     "Chunk upload completion requires an upload-ready chunk"
                 )
 
+            self._store_chunk_media(chunk_key, payload)
             self._mark_chunk_uploaded(meeting, chunk)
             self._prepare_chunk_processing(meeting, chunk)
             meeting.latestEvents = meeting.latestEvents[:12]
@@ -883,8 +908,23 @@ class MeetingStore:
         chunk: CaptureChunkSummary,
     ) -> ChunkContext:
         recorded_at = chunk.recordedAt
-        transcript_segments, transcript_source = process_transcript_chunk_with_source(chunk)
-        frame_count, screen_events, media_source = process_media_chunk_with_source(chunk)
+        chunk_key = (meeting.id, chunk.clientChunkId)
+        media = self._chunk_media_by_client_id.pop(chunk_key, None)
+        if media is not None:
+            # Real Gemini multimodal pass over the captured screen + audio.
+            media_bytes, media_mime = media
+            frame_count, screen_events, transcript_segments, vision_source = analyze_chunk_media(
+                chunk, media_bytes, media_mime
+            )
+            typed_source: ProcessingSourceMode = (
+                "downstream_service" if vision_source == "gemini_vision" else "local_fallback"
+            )
+            transcript_source = typed_source
+            media_source = typed_source
+        else:
+            # No media uploaded for this chunk — deterministic template fallback.
+            transcript_segments, transcript_source = process_transcript_chunk_with_source(chunk)
+            frame_count, screen_events, media_source = process_media_chunk_with_source(chunk)
         final_end = transcript_segments[-1].endedAt
 
         meeting.recentTranscriptSegments = (

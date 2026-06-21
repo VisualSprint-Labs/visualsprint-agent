@@ -441,6 +441,11 @@ class RegisterCaptureChunkRequest(BaseModel):
 
 class CompleteCaptureChunkUploadRequest(BaseModel):
     clientChunkId: str = Field(min_length=8, max_length=120)
+    # Base64-encoded captured media for this chunk (short webm clip or still frame).
+    # When present and vision is configured, the backend runs a real Gemini
+    # multimodal pass instead of the deterministic screen/transcript stubs.
+    mediaBase64: str | None = Field(default=None, max_length=20_000_000)
+    mediaMimeType: str | None = Field(default=None, max_length=120)
 
 
 class MeetingListResponse(BaseModel):
