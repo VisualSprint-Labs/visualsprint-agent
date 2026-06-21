@@ -2,25 +2,53 @@
 /**
  * Cross-platform Python runner for npm scripts.
  *
- * Tries `python`, `python3`, and `py` (Windows) in order, then executes the
- * supplied module/arguments with the first interpreter found.
+ * Requires Python >=3.12. Tries versioned interpreters first so that systems
+ * where `python` or `python3` resolve to an older release still find the
+ * right one.
  */
 
 const { spawnSync } = require("child_process");
 
-const CANDIDATES = ["python", "python3", "py"];
+const MIN_MAJOR = 3;
+const MIN_MINOR = 12;
+
+// Check project venv first so installed packages are found in local dev.
+// In CI (no venv) the versioned system interpreters are tried in order.
+const CANDIDATES = [
+  ".venv/bin/python",
+  ".venv/Scripts/python",
+  "python3.13",
+  "python3.12",
+  "python3",
+  "python",
+  "py",
+];
+
+function getVersion(candidate) {
+  const result = spawnSync(candidate, ["-c", "import sys; print(sys.version_info[:2])"], {
+    encoding: "utf-8",
+    shell: process.platform === "win32",
+  });
+  if (result.error || result.status !== 0) return null;
+  const match = result.stdout.match(/\((\d+),\s*(\d+)\)/);
+  if (!match) return null;
+  return [parseInt(match[1], 10), parseInt(match[2], 10)];
+}
 
 function findPython() {
   for (const candidate of CANDIDATES) {
-    const result = spawnSync(candidate, ["--version"], {
-      stdio: "ignore",
-      shell: process.platform === "win32",
-    });
-    if (!result.error && result.status === 0) {
+    const version = getVersion(candidate);
+    if (
+      version &&
+      (version[0] > MIN_MAJOR ||
+        (version[0] === MIN_MAJOR && version[1] >= MIN_MINOR))
+    ) {
       return candidate;
     }
   }
-  console.error("No Python interpreter found (tried: python, python3, py)");
+  console.error(
+    `No Python >=${MIN_MAJOR}.${MIN_MINOR} interpreter found (tried: ${CANDIDATES.join(", ")})`
+  );
   process.exit(1);
 }
 
