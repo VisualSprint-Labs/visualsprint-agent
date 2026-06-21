@@ -4,9 +4,12 @@ import type { MeetingDetail, RegisterCaptureChunkRequest } from "@visualsprint/c
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  blobToBase64,
   buildCaptureResources,
   buildClientChunkId,
+  createKeyframeGrabber,
   resolveRecorderMimeType,
+  type KeyframeGrabber,
 } from "../../../lib/capture";
 import { getErrorMessage } from "../../../lib/format";
 import {
@@ -36,6 +39,7 @@ export function useBrowserCapture({
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const cleanupCaptureRef = useRef<(() => void) | null>(null);
+  const keyframeGrabberRef = useRef<KeyframeGrabber | null>(null);
   const chunkSequenceRef = useRef(0);
   const chunkStartedAtRef = useRef(0);
   const chunkRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -125,7 +129,12 @@ export function useBrowserCapture({
           : new MediaRecorder(resources.stream);
 
       recorderRef.current = recorder;
-      cleanupCaptureRef.current = resources.cleanup;
+      keyframeGrabberRef.current = createKeyframeGrabber(resources.stream);
+      cleanupCaptureRef.current = () => {
+        keyframeGrabberRef.current?.dispose();
+        keyframeGrabberRef.current = null;
+        resources?.cleanup();
+      };
       chunkSequenceRef.current = 0;
       chunkStartedAtRef.current = Date.now();
       stopPromiseRef.current = null;
@@ -139,23 +148,34 @@ export function useBrowserCapture({
 
         const now = Date.now();
         const sequence = chunkSequenceRef.current + 1;
+        const mimeType = event.data.type || preferredMimeType || "video/webm";
         const payload: RegisterCaptureChunkRequest = {
           clientChunkId: buildClientChunkId(response.captureSession.id, sequence),
           sequence,
           durationMs: Math.max(now - chunkStartedAtRef.current, 250),
           byteSize: event.data.size,
-          mimeType: event.data.type || preferredMimeType || "video/webm",
+          mimeType,
         };
         chunkSequenceRef.current = sequence;
         chunkStartedAtRef.current = now;
+
+        // Snapshot the screen for this chunk now, before the next frame paints,
+        // so the backend's multimodal vision sees what was on screen.
+        const framePromise = keyframeGrabberRef.current?.grab() ?? Promise.resolve(null);
 
         chunkRequestQueueRef.current = chunkRequestQueueRef.current
           .then(async () => {
             const chunkResponse = await registerCaptureChunk(activeMeeting.id, payload);
             onMeetingUpdated(chunkResponse.meeting);
 
+            const frame = await framePromise;
+            const mediaBase64 =
+              frame && frame.size <= 12_000_000 ? await blobToBase64(frame) : null;
+
             const uploadResponse = await completeCaptureChunkUpload(activeMeeting.id, {
               clientChunkId: payload.clientChunkId,
+              mediaBase64,
+              mediaMimeType: mediaBase64 ? "image/jpeg" : null,
             });
             onMeetingUpdated(uploadResponse.meeting);
 

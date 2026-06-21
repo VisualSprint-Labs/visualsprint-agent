@@ -419,6 +419,9 @@ export interface RegisterCaptureChunkRequest {
 
 export interface CompleteCaptureChunkUploadRequest {
   clientChunkId: string;
+  /** Base64-encoded captured media (short webm clip) for real multimodal vision. */
+  mediaBase64?: string | null;
+  mediaMimeType?: string | null;
 }
 
 export interface CaptureSessionResponse {
