@@ -22,13 +22,21 @@ def execute_slack_action(recommendation: ActionRecommendation) -> tuple[bool, st
     return _post_slack_message(slack_details)
 
 
+def _looks_like_channel_id(value: str) -> bool:
+    # Slack channel/DM IDs start with C, G or D followed by uppercase/digits.
+    return len(value) >= 9 and value[0] in {"C", "G", "D"} and value[1:].isalnum() and value.isupper()
+
+
 def _post_slack_message(slack_details: SlackRecommendation) -> tuple[bool, str]:
     url = "https://slack.com/api/chat.postMessage"
-    channel = slack_details.channel or settings.slack_default_channel or "#general"
+    raw = (slack_details.channel or settings.slack_default_channel or "general").strip()
 
-    # Ensure channel has # prefix if it's a channel name
-    if channel and not channel.startswith("#") and not channel.startswith("@") and not channel.startswith("C"):
-        channel = f"#{channel}"
+    # A channel ID is the most reliable target (works with only chat:write). A
+    # plain name requires channels:read for the bot to resolve it.
+    if _looks_like_channel_id(raw):
+        channel = raw
+    else:
+        channel = raw if raw.startswith(("#", "@")) else f"#{raw.lstrip('#')}"
 
     payload = {
         "channel": channel,
@@ -36,9 +44,11 @@ def _post_slack_message(slack_details: SlackRecommendation) -> tuple[bool, str]:
         "unfurl_links": False,
     }
 
+    # Defensive strip: stored secrets can carry a trailing CR/newline.
+    token = (settings.slack_bot_token_secret or "").strip()
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.slack_bot_token_secret}",
+        "Authorization": f"Bearer {token}",
     }
 
     try:
@@ -56,6 +66,14 @@ def _post_slack_message(slack_details: SlackRecommendation) -> tuple[bool, str]:
             ts = result.get("ts", "unknown")
             return True, f"Slack message posted to {channel} (ts={ts})"
         error_msg = result.get("error", "unknown_error")
+        if error_msg in {"channel_not_found", "not_in_channel"}:
+            return False, (
+                f"Slack error '{error_msg}' for {channel}. Invite the bot to the channel "
+                "(/invite @visualsprint_agent) and set SLACK_DEFAULT_CHANNEL to the channel ID, "
+                "or grant the bot the channels:read scope so it can resolve channel names."
+            )
+        if error_msg == "missing_scope":
+            return False, "Slack error 'missing_scope': the bot token needs the chat:write scope."
         return False, f"Slack API error: {error_msg}"
     except error.HTTPError as e:
         body = e.read().decode("utf-8") if hasattr(e, "read") else ""
