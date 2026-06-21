@@ -10,6 +10,7 @@ import { ErrorBanner } from "../../components/shared/error-banner";
 import { PageSkeleton } from "../../components/ui/skeleton";
 import { Tabs } from "../../components/ui/tabs";
 import { useMeetingSession } from "../meeting-session/context/meeting-session-provider";
+import { CaptureGuide } from "./components/capture-guide";
 import { CapturePanel } from "./components/capture-panel";
 import { LiveMetricsRow } from "./components/live-metrics-row";
 import { MemoryPanel } from "./components/memory-panel";
@@ -52,6 +53,7 @@ export function LiveSessionPage() {
 
   const sessionPanels = (
     <div className="space-y-8">
+      <CaptureGuide />
       <LiveMetricsRow meeting={meeting} />
       <CapturePanel />
     </div>
