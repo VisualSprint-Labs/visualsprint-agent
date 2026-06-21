@@ -10,8 +10,6 @@ import {
   Zap,
   Ticket,
   MessageSquare,
-  TrendingUp,
-  AlertTriangle,
   ListChecks,
   Sparkles,
 } from "lucide-react";
@@ -22,6 +20,7 @@ import { InfoTile } from "../../components/ui/metric";
 import { PageSkeleton } from "../../components/ui/skeleton";
 import { Button } from "../../components/ui/button";
 import { ErrorBanner } from "../../components/shared/error-banner";
+import { PageGuide } from "../../components/shared/page-guide";
 import { useMeetingSession } from "../meeting-session/context/meeting-session-provider";
 
 const container = {
@@ -198,6 +197,18 @@ export function ActionsPage() {
           </p>
         </div>
       </header>
+
+      <PageGuide
+        icon={<ListChecks size={18} strokeWidth={2.5} />}
+        eyebrow="How approval works"
+        title="Nothing is sent until you approve it"
+        body="These are AI-drafted suggestions based on your meeting report — they have not touched Jira or Slack yet. Review each card, approve the ones you want, then execute to actually create the ticket or post the message."
+        steps={[
+          { label: "Review", body: "Read each suggested Jira ticket or Slack message and its confidence." },
+          { label: "Approve or reject", body: "Keep the ones you want; reject anything you don't need." },
+          { label: "Execute", body: "Send approved items to Jira or Slack — only then do they go live." },
+        ]}
+      />
 
       {actionRecommendations.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-3">

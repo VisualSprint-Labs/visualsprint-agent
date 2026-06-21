@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, FileText, RotateCcw } from "lucide-react";
 
 import { ErrorBanner } from "../../components/shared/error-banner";
+import { PageGuide } from "../../components/shared/page-guide";
 import { EmptyState } from "../../components/ui/empty-state";
 import { PageSkeleton } from "../../components/ui/skeleton";
 import { Button } from "../../components/ui/button";
@@ -74,13 +75,25 @@ export function MeetingReportPage() {
       </header>
 
       {reportReady ? (
-        <FinalReportView
-          hasRecommendations={actionRecommendations.length > 0}
-          meetingId={meeting.id}
-          report={reportReady}
-          screenEvents={meeting.recentScreenEvents}
-          transcriptSegments={meeting.recentTranscriptSegments}
-        />
+        <>
+          <PageGuide
+            icon={<FileText size={18} strokeWidth={2.5} />}
+            eyebrow="Your report"
+            title="This is the meeting's system of record"
+            body="Every decision, commitment, blocker, and open question below was pulled from what actually happened — the screen and the conversation. Click any evidence link on a card to jump straight to the moment it came from."
+            action={{
+              label: "Turn these into Jira tickets & Slack messages",
+              href: `/meetings/${meeting.id}/actions`,
+            }}
+          />
+          <FinalReportView
+            hasRecommendations={actionRecommendations.length > 0}
+            meetingId={meeting.id}
+            report={reportReady}
+            screenEvents={meeting.recentScreenEvents}
+            transcriptSegments={meeting.recentTranscriptSegments}
+          />
+        </>
       ) : isGenerating ? (
         <div className="space-y-4">
           <PageSkeleton />
