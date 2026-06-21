@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { LayoutList, PlusCircle, Sun, Moon, Monitor, Menu, X, Radio, ChevronRight } from "lucide-react";
+import { LayoutList, PlusCircle, Menu, X, Radio, ChevronRight } from "lucide-react";
 
-import { useTheme } from "../providers/theme-provider";
+import { ThemeSwitcher } from "./theme-switcher";
 import { showDevPanels } from "../../lib/env";
 
 const navItems = [
@@ -15,7 +15,6 @@ const navItems = [
 
 const sidebarNavItems = [
   { href: "/meetings", label: "Meetings", icon: LayoutList, badge: null },
-  { href: "/meetings/new", label: "New meeting", icon: PlusCircle, badge: null },
 ];
 
 function Logo() {
@@ -35,7 +34,6 @@ function Logo() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { resolvedTheme, setTheme, theme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isLanding = pathname === "/";
 
@@ -65,14 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </nav>
-              <button
-                type="button"
-                onClick={() => setTheme(theme === "system" ? (resolvedTheme === "ink" ? "paper" : "ink") : theme === "ink" ? "paper" : "system")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
-                aria-label="Toggle theme"
-              >
-                {theme === "system" ? <Monitor size={16} strokeWidth={2} /> : resolvedTheme === "ink" ? <Moon size={16} strokeWidth={2} /> : <Sun size={16} strokeWidth={2} />}
-              </button>
+              <ThemeSwitcher compact />
             </div>
           </div>
         </header>
@@ -90,6 +81,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+          <Link
+            href="/meetings/new"
+            className="mb-3 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-fg shadow-sm transition-all duration-200 hover:bg-brand-hover hover:shadow-md active:scale-[0.98]"
+          >
+            <PlusCircle size={16} strokeWidth={2.5} />
+            New meeting
+          </Link>
           <div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-subtle">
             Workspace
           </div>
@@ -135,17 +133,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </div>
 
-        <div className="border-t border-border p-3">
-          <div className="flex items-center justify-end rounded-xl border border-border bg-surface-muted px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setTheme(theme === "system" ? (resolvedTheme === "ink" ? "paper" : "ink") : theme === "ink" ? "paper" : "system")}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground-muted transition hover:bg-surface-2 hover:text-foreground"
-              aria-label="Toggle theme"
-            >
-              {theme === "system" ? <Monitor size={14} strokeWidth={2} /> : resolvedTheme === "ink" ? <Moon size={14} strokeWidth={2} /> : <Sun size={14} strokeWidth={2} />}
-            </button>
+        <div className="space-y-3 border-t border-border p-3">
+          <div className="px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-subtle">
+            Theme
           </div>
+          <ThemeSwitcher />
         </div>
       </aside>
 
@@ -175,6 +167,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Logo />
         </div>
         <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+          <Link
+            href="/meetings/new"
+            onClick={() => setMobileOpen(false)}
+            className="mb-3 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-fg shadow-sm transition active:scale-[0.98]"
+          >
+            <PlusCircle size={16} strokeWidth={2.5} />
+            New meeting
+          </Link>
           <div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-subtle">Workspace</div>
           {sidebarNavItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -202,12 +202,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           )}
         </div>
-        <div className="border-t border-border p-3">
-          <div className="flex items-center justify-end rounded-xl border border-border bg-surface-muted px-3 py-2">
-            <button type="button" onClick={() => setTheme(theme === "system" ? (resolvedTheme === "ink" ? "paper" : "ink") : theme === "ink" ? "paper" : "system")} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground-muted transition hover:bg-surface-2 hover:text-foreground" aria-label="Toggle theme">
-              {theme === "system" ? <Monitor size={14} strokeWidth={2} /> : resolvedTheme === "ink" ? <Moon size={14} strokeWidth={2} /> : <Sun size={14} strokeWidth={2} />}
-            </button>
+        <div className="space-y-3 border-t border-border p-3">
+          <div className="px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-foreground-subtle">
+            Theme
           </div>
+          <ThemeSwitcher />
         </div>
       </div>
 

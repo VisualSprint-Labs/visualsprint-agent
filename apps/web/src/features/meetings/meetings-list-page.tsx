@@ -4,7 +4,7 @@ import type { MeetingStatus } from "@visualsprint/contracts";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { LayoutList, PlusCircle, Radio, Clock, CheckCircle2, ArrowUpRight, Users, Calendar } from "lucide-react";
+import { LayoutList, PlusCircle, Radio, Clock, CheckCircle2, ArrowUpRight, Users, Calendar, Monitor, Mic, FileText } from "lucide-react";
 
 import { ThemeWrapper } from "../../components/layout/theme-wrapper";
 import { Button } from "../../components/ui/button";
@@ -103,10 +103,58 @@ export function MeetingsListPage() {
         ) : error ? (
           <EmptyState title="Unable to load meetings" body={String(error)} />
         ) : meetings.length === 0 ? (
-          <EmptyState
-            title="No meetings yet"
-            body="Create your first meeting to start capturing live context and generating reports."
-          />
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] as const }}
+            className="overflow-hidden rounded-3xl border border-brand/20 bg-gradient-to-b from-brand/[0.06] to-transparent p-8 sm:p-12"
+          >
+            <div className="mx-auto max-w-2xl text-center">
+              <div className="mx-auto mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/12 text-brand">
+                <Radio size={26} strokeWidth={2} />
+              </div>
+              <h2 className="text-balance text-2xl font-bold tracking-tight sm:text-3xl">
+                Run your first meeting with VisualSprint
+              </h2>
+              <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-foreground-muted sm:text-base">
+                Share your screen and talk through a meeting — an AI agent watches and listens, then
+                hands you the decisions, blockers, and ready-to-send Jira &amp; Slack actions.
+              </p>
+
+              <div className="mx-auto mt-8 grid max-w-xl gap-3 sm:grid-cols-3">
+                {[
+                  { icon: Monitor, label: "Capture", body: "Share a screen or tab to start." },
+                  { icon: Mic, label: "Run it", body: "Insights appear as you talk." },
+                  { icon: FileText, label: "Report", body: "Summary + actions at the end." },
+                ].map((step, i) => {
+                  const Icon = step.icon;
+                  return (
+                    <div
+                      key={step.label}
+                      className="rounded-2xl border border-border bg-surface/70 p-4 text-left"
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-brand/10 text-[11px] font-bold text-brand">
+                          {i + 1}
+                        </span>
+                        <Icon size={15} strokeWidth={2} className="text-brand" />
+                        <span className="text-sm font-semibold">{step.label}</span>
+                      </div>
+                      <p className="text-xs leading-5 text-foreground-muted">{step.body}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-8">
+                <Link href="/meetings/new">
+                  <Button size="lg" leftIcon={<PlusCircle size={18} strokeWidth={2.5} />} className="shadow-sm">
+                    Create your first meeting
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </motion.div>
         ) : filteredMeetings.length === 0 ? (
           <EmptyState
             title={`No ${statusFilter} meetings`}
