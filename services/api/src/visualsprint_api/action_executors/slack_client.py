@@ -27,9 +27,21 @@ def _looks_like_channel_id(value: str) -> bool:
     return len(value) >= 9 and value[0] in {"C", "G", "D"} and value[1:].isalnum() and value.isupper()
 
 
+# The action agent emits placeholder strings when it has no specific channel in
+# mind. These must fall back to the configured default channel, not be posted to.
+_PLACEHOLDER_CHANNELS = {"not specified", "not_specified", "none", "n/a", "na", "unknown", ""}
+
+
+def _resolve_channel(slack_channel: str | None) -> str:
+    candidate = (slack_channel or "").strip()
+    if candidate.lower().lstrip("#@") in _PLACEHOLDER_CHANNELS:
+        candidate = (settings.slack_default_channel or "").strip()
+    return candidate or "general"
+
+
 def _post_slack_message(slack_details: SlackRecommendation) -> tuple[bool, str]:
     url = "https://slack.com/api/chat.postMessage"
-    raw = (slack_details.channel or settings.slack_default_channel or "general").strip()
+    raw = _resolve_channel(slack_details.channel)
 
     # A channel ID is the most reliable target (works with only chat:write). A
     # plain name requires channels:read for the bot to resolve it.
