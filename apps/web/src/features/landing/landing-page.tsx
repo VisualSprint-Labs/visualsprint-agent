@@ -51,9 +51,10 @@ const highlights = [
 const integrationItems = [
   { label: "Jira action recommendations", icon: CheckSquare },
   { label: "Slack update approvals", icon: MessageSquare },
-  { label: "Evidence-backed meeting reports", icon: FileCheck },
-  { label: "Browser-based online meeting capture", icon: Monitor },
-  { label: "Multi-agent reasoning pipeline", icon: Sparkles },
+  { label: "Evidence-backed reports", icon: FileCheck },
+  { label: "Browser meeting capture", icon: Monitor },
+  { label: "Multi-agent system", icon: Sparkles },
+  { label: "Approval before execution", icon: Shield },
 ];
 
 const pipelineSteps = [

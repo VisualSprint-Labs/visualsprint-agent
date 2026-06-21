@@ -71,7 +71,7 @@ export function LinkedEvidenceFeed({
           {segments.length === 0 ? (
             <EmptyState
               title="No transcript yet"
-              body="Transcript lines appear as the meeting is processed."
+              body="Start capture to collect meeting conversations and screen context."
             />
           ) : (
             segments.map((segment) => {
@@ -108,7 +108,7 @@ export function LinkedEvidenceFeed({
           {screenEvents.length === 0 ? (
             <EmptyState
               title="No visual evidence yet"
-              body="Screen moments appear as recording segments are analyzed."
+              body="Start capture and share your screen so VisualSprint can read what's shown."
             />
           ) : (
             screenEvents.map((screenEvent) => {

@@ -62,6 +62,17 @@ function RecommendationCard({
     recommendation.jiraDetails?.description ??
     recommendation.slackDetails?.message ??
     "";
+  const target = isJira
+    ? "Jira"
+    : recommendation.slackDetails?.channel && recommendation.slackDetails.channel !== "not specified"
+      ? `Slack ${recommendation.slackDetails.channel}`
+      : "Slack";
+  const executeLabel = isJira ? "Create Jira issue" : "Send to Slack";
+  const evidence =
+    recommendation.jiraDetails?.evidence ??
+    recommendation.slackDetails?.evidence ??
+    recommendation.evidence ??
+    [];
 
   return (
     <motion.article
@@ -96,12 +107,36 @@ function RecommendationCard({
       </div>
       <p className="mt-4 text-sm font-bold text-foreground">{title}</p>
       <p className="mt-1.5 text-sm leading-6 text-foreground-muted">{description}</p>
-      {recommendation.executionResult ? (
-        <p className="mt-3 text-xs text-foreground-subtle">{recommendation.executionResult}</p>
+
+      <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-foreground-subtle">
+        {isJira ? <Ticket size={12} strokeWidth={2} /> : <MessageSquare size={12} strokeWidth={2} />}
+        Will be created in {target} after you approve and execute
+      </p>
+
+      {evidence.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-border bg-surface-muted/60 p-3">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-foreground-subtle">
+            From the meeting
+          </p>
+          <ul className="space-y-1">
+            {evidence.slice(0, 2).map((ref, i) => (
+              <li key={i} className="text-xs leading-5 text-foreground-muted">
+                {ref.note || ref.transcriptRef || "Linked meeting moment"}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
-      <div className="mt-5 flex flex-wrap gap-2">
+
+      {recommendation.executionResult ? (
+        <p className="mt-3 rounded-lg bg-surface-muted/60 px-3 py-2 text-xs text-foreground-subtle">
+          {recommendation.executionResult}
+        </p>
+      ) : null}
+
+      <div className="mt-5 border-t border-border pt-4">
         {recommendation.status === "pending" ? (
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               leftIcon={<CheckCircle2 size={14} strokeWidth={2} />}
@@ -112,25 +147,38 @@ function RecommendationCard({
             </Button>
             <Button
               size="sm"
-              variant="secondary"
+              variant="ghost"
               leftIcon={<XCircle size={14} strokeWidth={2} />}
               disabled={isBusy}
               onClick={onReject}
             >
               Reject
             </Button>
-          </>
-        ) : null}
-        {recommendation.status === "approved" ? (
-          <Button
-            size="sm"
-            leftIcon={<Zap size={14} strokeWidth={2} />}
-            disabled={isBusy}
-            onClick={onExecute}
-          >
-            Execute
-          </Button>
-        ) : null}
+            <span className="ml-auto text-xs text-foreground-subtle">Step 1 of 2 · nothing sent yet</span>
+          </div>
+        ) : recommendation.status === "approved" ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              leftIcon={<Zap size={14} strokeWidth={2} />}
+              disabled={isBusy}
+              onClick={onExecute}
+            >
+              {executeLabel}
+            </Button>
+            <span className="ml-auto text-xs text-foreground-subtle">
+              Approved · this will send it now
+            </span>
+          </div>
+        ) : (
+          <p className="text-xs font-medium text-foreground-muted">
+            {recommendation.status === "executed"
+              ? `Sent to ${target}.`
+              : recommendation.status === "rejected"
+                ? "Rejected — not sent."
+                : "Could not be sent."}
+          </p>
+        )}
       </div>
     </motion.article>
   );
@@ -236,8 +284,8 @@ export function ActionsPage() {
               title="No recommendations yet"
               body={
                 meeting.status === "ended"
-                  ? "Generate recommendations to see Jira and Slack suggestions."
-                  : "End the meeting first to generate action recommendations."
+                  ? "Generate recommendations after the report is ready to see Jira and Slack suggestions you can approve."
+                  : "End the meeting first, then generate recommendations once the report is ready."
               }
             />
           ) : (

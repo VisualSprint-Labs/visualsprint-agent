@@ -9,6 +9,7 @@ import {
   Loader2,
   CheckCircle2,
   Mic,
+  Shield,
 } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
@@ -144,6 +145,14 @@ export function CaptureGuide() {
           </span>
         )}
       </div>
+
+      <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-foreground-subtle">
+        <Shield size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-foreground-muted" />
+        <span>
+          No silent recording. No hidden sharing. VisualSprint only captures meetings your team
+          starts, then uses that context to create your private reports and approved workflow actions.
+        </span>
+      </p>
     </GuideShell>
   );
 }
