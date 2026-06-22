@@ -84,7 +84,7 @@ type MeetingSessionContextValue = {
   refreshMeetings: () => Promise<MeetingSummary[]>;
   selectMeeting: (id: string) => Promise<void>;
   createMeetingFromDraft: (event?: React.FormEvent) => Promise<MeetingDetail | null>;
-  startMeetingSession: () => Promise<boolean>;
+  startMeetingSession: (targetId?: string) => Promise<boolean>;
   endMeetingSession: () => Promise<boolean>;
   beginBrowserCapture: () => Promise<void>;
   stopBrowserCapture: () => Promise<void>;
@@ -367,14 +367,15 @@ export function MeetingSessionProvider({
     [applyMeeting, draft, fail, refreshMeetings, succeed],
   );
 
-  const startMeetingSession = useCallback(async () => {
-    if (!meeting) {
+  const startMeetingSession = useCallback(async (targetId?: string) => {
+    const id = targetId ?? meeting?.id;
+    if (!id) {
       return false;
     }
     setIsBusy(true);
     setError(null);
     try {
-      const response = await startMeeting(meeting.id);
+      const response = await startMeeting(id);
       applyMeeting(response.meeting);
       await refreshMeetings();
       succeed("Meeting started.");

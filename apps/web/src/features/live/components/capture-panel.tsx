@@ -1,14 +1,11 @@
 "use client";
 
-import { useRef } from "react";
-import { Play, Square, Radio } from "lucide-react";
+import { Radio } from "lucide-react";
 
 import { CaptureChunkCard, CaptureSessionSummary } from "../../../components/domain/capture-cards";
 import { Card } from "../../../components/ui/card";
 import { EmptyState } from "../../../components/ui/empty-state";
-import { Button } from "../../../components/ui/button";
 import { CaptureStatusPill } from "../../../components/ui/status-pill";
-import { formatCapturePhase } from "../../../lib/format";
 import type { CapturePhase } from "../../meeting-session/types";
 import { useMeetingSession } from "../../meeting-session/context/meeting-session-provider";
 
@@ -26,15 +23,7 @@ function captureStatusMessage(phase: CapturePhase) {
 }
 
 export function CapturePanel() {
-  const beginButtonRef = useRef<HTMLButtonElement | null>(null);
-  const stopButtonRef = useRef<HTMLButtonElement | null>(null);
-  const {
-    meeting,
-    capturePhase,
-    canStartCapture,
-    beginBrowserCapture,
-    stopBrowserCapture,
-  } = useMeetingSession();
+  const { meeting, capturePhase } = useMeetingSession();
 
   if (!meeting) {
     return (
@@ -46,8 +35,6 @@ export function CapturePanel() {
 
   const activeCaptureSession = meeting.activeCaptureSession;
   const recentChunks = meeting.recentCaptureChunks;
-
-  const isCaptureBusy = capturePhase === "requesting" || capturePhase === "stopping";
   const isRecording = capturePhase === "recording";
 
   return (
@@ -58,26 +45,29 @@ export function CapturePanel() {
         </p>
 
         <div
-          aria-busy={isCaptureBusy}
           className={`relative overflow-hidden rounded-2xl border p-5 transition-all duration-300 ${
             isRecording
               ? "border-[var(--status-live)]/30 bg-[var(--status-live)]/5 shadow-glow"
               : "border-border bg-surface-muted"
           }`}
         >
-          {isRecording && (
+          {isRecording ? (
             <div className="absolute right-4 top-4">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--status-live)]/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--status-live)]">
                 <Radio size={10} strokeWidth={2.5} className="live-pulse" />
                 Recording
               </span>
             </div>
-          )}
+          ) : null}
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">
-                {activeCaptureSession ? "Capture is active" : "Capture not started"}
+                {isRecording
+                  ? "Capturing your screen & audio"
+                  : activeCaptureSession
+                    ? "Capture session ready"
+                    : "Capture not started"}
               </p>
               <div className="mt-2">
                 <CaptureSessionSummary
@@ -93,45 +83,16 @@ export function CapturePanel() {
               status={activeCaptureSession?.status ?? "idle"}
             />
           </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            {isCaptureBusy ? (
-              <p className="w-full text-sm text-foreground-muted">
-                {formatCapturePhase(capturePhase)}
-              </p>
-            ) : null}
-            <Button
-              ref={beginButtonRef}
-              leftIcon={<Play size={16} strokeWidth={2.5} />}
-              disabled={!canStartCapture || isCaptureBusy}
-              onClick={() => {
-                void beginBrowserCapture();
-                stopButtonRef.current?.focus();
-              }}
-              className={isRecording ? "" : "shadow-sm"}
-            >
-              Begin capture
-            </Button>
-            <Button
-              ref={stopButtonRef}
-              variant="secondary"
-              leftIcon={<Square size={16} strokeWidth={2.5} />}
-              disabled={capturePhase !== "recording" || isCaptureBusy}
-              onClick={() => {
-                void stopBrowserCapture();
-                beginButtonRef.current?.focus();
-              }}
-            >
-              Stop capture
-            </Button>
-          </div>
         </div>
 
         <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-subtle">
+            Captured segments
+          </p>
           {recentChunks.length === 0 ? (
             <EmptyState
               title="No segments yet"
-              body="Capture segments appear here every few seconds during recording."
+              body="Each few-second window of screen and audio appears here once capture starts."
             />
           ) : (
             recentChunks.map((chunk) => <CaptureChunkCard key={chunk.id} chunk={chunk} />)

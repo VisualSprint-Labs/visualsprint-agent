@@ -3,26 +3,31 @@
 import { sourceConnectors } from "@visualsprint/contracts";
 import type { CreateMeetingRequest } from "@visualsprint/contracts";
 import { useRouter } from "next/navigation";
-import { PlusCircle, Play, PenLine } from "lucide-react";
+import { Play } from "lucide-react";
 
 import { Card } from "../../../components/ui/card";
 import { Field } from "../../../components/ui/field";
 import { inputClassName } from "../../../components/ui/button-styles";
 import { Button } from "../../../components/ui/button";
 import { useMeetingSession } from "../../meeting-session/context/meeting-session-provider";
-import { meetingRouteForStatus } from "../../../lib/meeting";
 
 export function CreateMeetingForm() {
   const router = useRouter();
-  const { draft, setDraft, isBusy, createMeetingFromDraft, startMeetingSession, meeting } =
+  const { draft, setDraft, isBusy, createMeetingFromDraft, startMeetingSession } =
     useMeetingSession();
 
+  // One action: create the meeting, start it, and drop the user straight into the
+  // live workspace — no separate "now start it" step to discover.
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const created = await createMeetingFromDraft(event);
-    if (created) {
-      router.push(meetingRouteForStatus(created));
+    if (!created) {
+      return;
     }
+    await startMeetingSession(created.id);
+    // Draft /live redirects back to setup, so this is safe even if start failed
+    // (the error toast will have surfaced the reason).
+    router.push(`/meetings/${created.id}/live`);
   }
 
   return (
@@ -104,31 +109,19 @@ export function CreateMeetingForm() {
           />
         </Field>
 
-        <div className="flex flex-wrap gap-3 pt-2">
+        <div className="flex flex-col gap-2 pt-2">
           <Button
-            leftIcon={<PlusCircle size={16} strokeWidth={2} />}
+            leftIcon={<Play size={16} strokeWidth={2.5} />}
             disabled={isBusy}
             type="submit"
+            size="lg"
             className="shadow-sm"
           >
-            {isBusy ? "Creating…" : "Create meeting"}
+            {isBusy ? "Starting…" : "Create & start meeting"}
           </Button>
-          {meeting?.status === "draft" ? (
-            <Button
-              variant="secondary"
-              leftIcon={<Play size={16} strokeWidth={2} />}
-              disabled={isBusy}
-              onClick={() => {
-                void startMeetingSession().then((didStart) => {
-                  if (didStart) {
-                    router.push(`/meetings/${meeting.id}/live`);
-                  }
-                });
-              }}
-            >
-              Start meeting
-            </Button>
-          ) : null}
+          <p className="text-xs text-foreground-muted">
+            We&apos;ll open the live workspace and ask which screen or tab to share.
+          </p>
         </div>
       </form>
     </Card>

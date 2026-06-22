@@ -7,9 +7,7 @@ import {
   blobToBase64,
   buildCaptureResources,
   buildClientChunkId,
-  createKeyframeGrabber,
   resolveRecorderMimeType,
-  type KeyframeGrabber,
 } from "../../../lib/capture";
 import { getErrorMessage } from "../../../lib/format";
 import {
@@ -21,6 +19,15 @@ import {
 } from "../../../lib/api";
 import type { CapturePhase } from "../types";
 import type { CaptureSupport } from "../../../hooks/use-capture-support";
+
+// Length of each capture window. Each window is recorded as a *standalone*,
+// independently-decodable webm (audio + video) by starting a fresh MediaRecorder
+// per window — a single recorder with a timeslice only makes the first blob
+// decodable, which is why audio (and therefore transcript) never worked before.
+const CHUNK_MS = 5000;
+// Skip the multimodal upload for unusually large windows (very busy screens) so
+// a single chunk can't blow up the request; the chunk is still registered.
+const MAX_MEDIA_BYTES = 14_000_000;
 
 export function useBrowserCapture({
   meeting,
@@ -37,9 +44,13 @@ export function useBrowserCapture({
   const meetingRef = useRef(meeting);
   meetingRef.current = meeting;
 
+  const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const cleanupCaptureRef = useRef<(() => void) | null>(null);
-  const keyframeGrabberRef = useRef<KeyframeGrabber | null>(null);
+  const recordingActiveRef = useRef(false);
+  const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const mimeTypeRef = useRef<string>("video/webm");
   const chunkSequenceRef = useRef(0);
   const chunkStartedAtRef = useRef(0);
   const chunkRequestQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -64,6 +75,7 @@ export function useBrowserCapture({
         cleanupCaptureRef.current?.();
         cleanupCaptureRef.current = null;
         recorderRef.current = null;
+        streamRef.current = null;
         setCapturePhase("idle");
         stopResolverRef.current?.();
         stopResolverRef.current = null;
@@ -73,13 +85,113 @@ export function useBrowserCapture({
     [onError, onMeetingUpdated],
   );
 
+  // Queue the backend work for one finished capture window. Errors here are
+  // benign races (e.g. a final window landing just after the session is marked
+  // complete) — surface real failures but swallow the expected "not recording".
+  const processChunk = useCallback(
+    (meetingId: string, sessionId: string, blob: Blob) => {
+      const now = Date.now();
+      const sequence = chunkSequenceRef.current + 1;
+      chunkSequenceRef.current = sequence;
+      const startedAt = chunkStartedAtRef.current || now;
+      chunkStartedAtRef.current = now;
+
+      const payload: RegisterCaptureChunkRequest = {
+        clientChunkId: buildClientChunkId(sessionId, sequence),
+        sequence,
+        durationMs: Math.min(Math.max(now - startedAt, 250), 120_000),
+        byteSize: blob.size,
+        mimeType: blob.type || mimeTypeRef.current || "video/webm",
+      };
+
+      chunkRequestQueueRef.current = chunkRequestQueueRef.current
+        .then(async () => {
+          const chunkResponse = await registerCaptureChunk(meetingId, payload);
+          onMeetingUpdated(chunkResponse.meeting);
+
+          const mediaBase64 = blob.size <= MAX_MEDIA_BYTES ? await blobToBase64(blob) : null;
+          const uploadResponse = await completeCaptureChunkUpload(meetingId, {
+            clientChunkId: payload.clientChunkId,
+            mediaBase64,
+            mediaMimeType: mediaBase64 ? payload.mimeType : null,
+          });
+          onMeetingUpdated(uploadResponse.meeting);
+
+          const reasoningResponse = await runCaptureChunkReasoning(
+            meetingId,
+            payload.clientChunkId,
+          );
+          onMeetingUpdated(reasoningResponse.meeting);
+        })
+        .catch((chunkError) => {
+          const message = getErrorMessage(chunkError);
+          // Expected when a trailing window finishes right as capture stops.
+          if (message.includes("while the session is recording")) {
+            return;
+          }
+          onError(message);
+        });
+    },
+    [onError, onMeetingUpdated],
+  );
+
+  // Record exactly one standalone window, then either record the next window or
+  // finalize the session if a stop was requested.
+  const recordWindow = useCallback(
+    (meetingId: string, sessionId: string) => {
+      const stream = streamRef.current;
+      if (!stream || !recordingActiveRef.current) {
+        return;
+      }
+
+      const recorder =
+        mimeTypeRef.current.length > 0
+          ? new MediaRecorder(stream, { mimeType: mimeTypeRef.current })
+          : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      const parts: Blob[] = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          parts.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        if (chunkTimerRef.current) {
+          clearTimeout(chunkTimerRef.current);
+          chunkTimerRef.current = null;
+        }
+        if (parts.length > 0) {
+          const blob = new Blob(parts, { type: mimeTypeRef.current || "video/webm" });
+          if (blob.size > 0 && meetingRef.current) {
+            processChunk(meetingId, sessionId, blob);
+          }
+        }
+        if (recordingActiveRef.current) {
+          recordWindow(meetingId, sessionId);
+        } else {
+          void finalizeCaptureSession(meetingId);
+        }
+      };
+
+      chunkStartedAtRef.current = Date.now();
+      recorder.start();
+      chunkTimerRef.current = setTimeout(() => {
+        if (recorderRef.current && recorderRef.current.state === "recording") {
+          recorderRef.current.stop();
+        }
+      }, CHUNK_MS);
+    },
+    [finalizeCaptureSession, processChunk],
+  );
+
   const stopBrowserCapture = useCallback(async () => {
-    const currentMeeting = meetingRef.current;
-    if (!currentMeeting || capturePhase !== "recording" || !recorderRef.current) {
+    if (!recordingActiveRef.current || capturePhase !== "recording") {
       return;
     }
-
     setCapturePhase("stopping");
+    recordingActiveRef.current = false;
 
     if (!stopPromiseRef.current) {
       stopPromiseRef.current = new Promise<void>((resolve) => {
@@ -87,9 +199,20 @@ export function useBrowserCapture({
       });
     }
 
-    recorderRef.current.stop();
+    if (chunkTimerRef.current) {
+      clearTimeout(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
+    // Stopping the active recorder flushes the current window as a complete
+    // webm; its onstop handler will run finalizeCaptureSession (recording is off).
+    if (recorderRef.current && recorderRef.current.state === "recording") {
+      recorderRef.current.stop();
+    } else {
+      void finalizeCaptureSession(meetingRef.current?.id ?? "");
+    }
+
     await stopPromiseRef.current;
-  }, [capturePhase]);
+  }, [capturePhase, finalizeCaptureSession]);
 
   const beginBrowserCapture = useCallback(async () => {
     const currentMeeting = meetingRef.current;
@@ -110,7 +233,6 @@ export function useBrowserCapture({
     }
 
     setCapturePhase("requesting");
-
     let resources: Awaited<ReturnType<typeof buildCaptureResources>> | null = null;
 
     try {
@@ -123,88 +245,39 @@ export function useBrowserCapture({
         hasMicrophoneAudio: resources.hasMicrophoneAudio,
       });
 
-      const recorder =
-        preferredMimeType.length > 0
-          ? new MediaRecorder(resources.stream, { mimeType: preferredMimeType })
-          : new MediaRecorder(resources.stream);
-
-      recorderRef.current = recorder;
-      keyframeGrabberRef.current = createKeyframeGrabber(resources.stream);
-      cleanupCaptureRef.current = () => {
-        keyframeGrabberRef.current?.dispose();
-        keyframeGrabberRef.current = null;
-        resources?.cleanup();
-      };
+      streamRef.current = resources.stream;
+      mimeTypeRef.current = preferredMimeType || "video/webm";
+      sessionIdRef.current = response.captureSession.id;
       chunkSequenceRef.current = 0;
       chunkStartedAtRef.current = Date.now();
       stopPromiseRef.current = null;
       stopResolverRef.current = null;
-
-      recorder.ondataavailable = (event) => {
-        const activeMeeting = meetingRef.current;
-        if (!activeMeeting || event.data.size === 0) {
-          return;
-        }
-
-        const now = Date.now();
-        const sequence = chunkSequenceRef.current + 1;
-        const mimeType = event.data.type || preferredMimeType || "video/webm";
-        const payload: RegisterCaptureChunkRequest = {
-          clientChunkId: buildClientChunkId(response.captureSession.id, sequence),
-          sequence,
-          durationMs: Math.max(now - chunkStartedAtRef.current, 250),
-          byteSize: event.data.size,
-          mimeType,
-        };
-        chunkSequenceRef.current = sequence;
-        chunkStartedAtRef.current = now;
-
-        // Snapshot the screen for this chunk now, before the next frame paints,
-        // so the backend's multimodal vision sees what was on screen.
-        const framePromise = keyframeGrabberRef.current?.grab() ?? Promise.resolve(null);
-
-        chunkRequestQueueRef.current = chunkRequestQueueRef.current
-          .then(async () => {
-            const chunkResponse = await registerCaptureChunk(activeMeeting.id, payload);
-            onMeetingUpdated(chunkResponse.meeting);
-
-            const frame = await framePromise;
-            const mediaBase64 =
-              frame && frame.size <= 12_000_000 ? await blobToBase64(frame) : null;
-
-            const uploadResponse = await completeCaptureChunkUpload(activeMeeting.id, {
-              clientChunkId: payload.clientChunkId,
-              mediaBase64,
-              mediaMimeType: mediaBase64 ? "image/jpeg" : null,
-            });
-            onMeetingUpdated(uploadResponse.meeting);
-
-            const reasoningResponse = await runCaptureChunkReasoning(
-              activeMeeting.id,
-              payload.clientChunkId,
-            );
-            onMeetingUpdated(reasoningResponse.meeting);
-          })
-          .catch((chunkError) => {
-            onError(getErrorMessage(chunkError));
-          });
+      const capturedResources = resources;
+      cleanupCaptureRef.current = () => {
+        capturedResources?.cleanup();
       };
 
-      recorder.onstop = () => {
-        void finalizeCaptureSession(currentMeeting.id);
-      };
+      // If the user stops the screen-share from the browser's own UI, end cleanly.
+      resources.stream.getVideoTracks().forEach((track) => {
+        track.addEventListener("ended", () => {
+          void stopBrowserCapture();
+        });
+      });
 
-      recorder.start(4000);
+      recordingActiveRef.current = true;
       onMeetingUpdated(response.meeting);
       setCapturePhase("recording");
+      recordWindow(currentMeeting.id, response.captureSession.id);
     } catch (captureError) {
+      recordingActiveRef.current = false;
       resources?.cleanup();
       cleanupCaptureRef.current = null;
       recorderRef.current = null;
+      streamRef.current = null;
       setCapturePhase("idle");
       onError(getErrorMessage(captureError));
     }
-  }, [captureSupport, finalizeCaptureSession, onError, onMeetingUpdated]);
+  }, [captureSupport, onError, onMeetingUpdated, recordWindow, stopBrowserCapture]);
 
   const canStartCapture =
     meeting?.status === "live" &&

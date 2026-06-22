@@ -12,6 +12,8 @@ import {
   Shield,
 } from "lucide-react";
 
+import { useRouter } from "next/navigation";
+
 import { Button } from "../../../components/ui/button";
 import { useMeetingSession } from "../../meeting-session/context/meeting-session-provider";
 
@@ -23,17 +25,27 @@ import { useMeetingSession } from "../../meeting-session/context/meeting-session
  * surfaces the primary action right next to the explanation.
  */
 export function CaptureGuide() {
+  const router = useRouter();
   const {
     meeting,
     capturePhase,
     canStartCapture,
+    isBusy,
     beginBrowserCapture,
-    stopBrowserCapture,
+    endMeetingSession,
   } = useMeetingSession();
 
   if (!meeting) {
     return null;
   }
+
+  const endMeeting = () => {
+    void endMeetingSession().then((didEnd) => {
+      if (didEnd) {
+        router.push(`/meetings/${meeting.id}/report`);
+      }
+    });
+  };
 
   const isRecording = capturePhase === "recording";
   const isRequesting = capturePhase === "requesting";
@@ -53,12 +65,13 @@ export function CaptureGuide() {
           <Button
             variant="danger"
             leftIcon={<Square size={16} strokeWidth={2.5} />}
-            onClick={() => void stopBrowserCapture()}
+            disabled={isBusy}
+            onClick={endMeeting}
           >
-            End capture &amp; build report
+            {isBusy ? "Ending…" : "End meeting & view report"}
           </Button>
           <span className="text-xs text-foreground-muted">
-            Finish when the meeting ends — you&apos;ll get a summary plus Jira &amp; Slack suggestions.
+            This stops capture and builds your summary plus Jira &amp; Slack suggestions.
           </span>
         </div>
       </GuideShell>
