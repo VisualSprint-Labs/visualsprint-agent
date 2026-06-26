@@ -13,6 +13,7 @@ from uuid import uuid4
 from visualsprint_api.config import settings
 from visualsprint_api.vision_pipeline import analyze_chunk_media
 from visualsprint_api.elastic_client import (
+    search_outcomes_in_elasticsearch,
     search_prior_outcomes_in_elasticsearch,
     upsert_indexed_outcomes_to_elasticsearch,
 )
@@ -56,6 +57,7 @@ from visualsprint_api.models import (
     LiveEvent,
     MemoryMatch,
     MeetingDetail,
+    OutcomeSearchResult,
     MeetingMetrics,
     MeetingSummary,
 )
@@ -431,6 +433,42 @@ class MeetingStore:
             matches.append(self._build_empty_memory_match(meeting_copy))
 
         return [match.model_copy(deep=True) for match in matches[:3]]
+
+    def search_outcomes(
+        self,
+        *,
+        query: str,
+        record_type: str | None,
+        limit: int,
+    ) -> tuple[bool, list[OutcomeSearchResult]]:
+        """Search every indexed meeting outcome (cross-meeting knowledge base)."""
+        hits = search_outcomes_in_elasticsearch(
+            config=settings,
+            query=query,
+            record_type=record_type,
+            limit=limit,
+        )
+        if hits is None:
+            # Elastic write-back is not configured — search is genuinely unavailable.
+            return False, []
+        results = [
+            OutcomeSearchResult(
+                recordType=document.record_type,
+                summary=document.summary,
+                detail=document.detail,
+                status=document.status,
+                meetingId=document.meeting_id,
+                meetingTitle=document.meeting_title,
+                ownerLabel=document.owner_label,
+                speakerLabel=document.speaker_label,
+                dueHint=document.due_hint,
+                severity=document.severity,
+                updatedAt=document.updated_at,
+                score=round(score, 4),
+            )
+            for document, score in hits
+        ]
+        return True, results
 
     def register_outputs(
         self,

@@ -120,6 +120,83 @@ def search_prior_outcomes_in_elasticsearch(
     return matches
 
 
+def search_outcomes_in_elasticsearch(
+    *,
+    config: Settings,
+    query: str,
+    record_type: str | None,
+    limit: int,
+) -> list[tuple[ElasticOutcomeDocument, float]] | None:
+    """Free-text search across every indexed meeting outcome (organizational memory).
+
+    Returns (document, normalized_score) pairs, or None when Elastic write-back is
+    not configured so the caller can signal "search unavailable" rather than faking
+    results.
+    """
+    if not config.elastic_writeback_configured or not config.elastic_index_outcomes:
+        return None
+
+    size = max(1, min(limit, 50))
+    trimmed = query.strip()
+    filters: list[dict] = [{"term": {"tenant_id": "default"}}]
+    if record_type:
+        filters.append({"term": {"record_type": record_type}})
+
+    if trimmed:
+        bool_query: dict = {
+            "filter": filters,
+            "should": [
+                {
+                    "multi_match": {
+                        "query": trimmed,
+                        "fields": ["summary^3", "detail^2", "meeting_title", "owner_label"],
+                        "fuzziness": "AUTO",
+                    }
+                }
+            ],
+            "minimum_should_match": 1,
+        }
+    else:
+        # No query text: browse the most recent outcomes (optionally filtered).
+        bool_query = {"filter": filters}
+
+    body = {
+        "size": size,
+        "_source": True,
+        "query": {"bool": bool_query},
+        "sort": (
+            ["_score", {"updated_at": {"order": "desc", "unmapped_type": "date"}}]
+            if trimmed
+            else [{"updated_at": {"order": "desc", "unmapped_type": "date"}}]
+        ),
+    }
+    response = _elastic_request_json(
+        config=config,
+        method="POST",
+        path=f"/{parse.quote(config.elastic_index_outcomes, safe='')}/_search",
+        payload=body,
+    )
+    if response is None:
+        return None
+
+    hits = response.get("hits", {}).get("hits", [])
+    results: list[tuple[ElasticOutcomeDocument, float]] = []
+    for hit in hits[:size]:
+        source = hit.get("_source")
+        if not isinstance(source, dict):
+            continue
+        try:
+            document = ElasticOutcomeDocument.model_validate(source)
+        except ValueError:
+            continue
+        try:
+            raw_score = float(hit.get("_score") or 0.0)
+        except (TypeError, ValueError):
+            raw_score = 0.0
+        results.append((document, max(0.0, min(raw_score / 10.0, 1.0))))
+    return results
+
+
 def _elastic_request_json(
     *,
     config: Settings,

@@ -3,18 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { LayoutList, PlusCircle, Menu, X, Radio, ChevronRight } from "lucide-react";
+import { LayoutList, PlusCircle, Menu, X, Radio, ChevronRight, Search } from "lucide-react";
 
 import { ThemeSwitcher } from "./theme-switcher";
 import { showDevPanels } from "../../lib/env";
 
 const navItems = [
   { href: "/meetings", label: "Meetings", icon: LayoutList },
-  { href: "/meetings/new", label: "New meeting", icon: PlusCircle },
+  { href: "/search", label: "Search", icon: Search },
 ];
 
 const sidebarNavItems = [
   { href: "/meetings", label: "Meetings", icon: LayoutList, badge: null },
+  { href: "/search", label: "Search knowledge", icon: Search, badge: null },
 ];
 
 function Logo() {

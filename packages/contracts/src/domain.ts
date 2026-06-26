@@ -358,6 +358,29 @@ export interface MemoryMatch {
   recordedAt: string;
 }
 
+export interface OutcomeSearchResult {
+  recordType: ReasoningRecordType;
+  summary: string;
+  detail: string;
+  status: ReasoningRecordStatus;
+  meetingId: string;
+  meetingTitle: string;
+  ownerLabel: string | null;
+  speakerLabel: string | null;
+  dueHint: string | null;
+  severity: BlockerSeverity | null;
+  updatedAt: string;
+  score: number;
+}
+
+export interface OutcomeSearchResponse {
+  query: string;
+  recordType: ReasoningRecordType | null;
+  available: boolean;
+  total: number;
+  results: OutcomeSearchResult[];
+}
+
 export interface OpenQuestionRecord {
   id: string;
   question: string;

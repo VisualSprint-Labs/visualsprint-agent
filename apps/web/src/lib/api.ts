@@ -18,6 +18,7 @@ import type {
   MeetingStreamEvent,
   MeetingDetailResponse,
   MeetingListResponse,
+  OutcomeSearchResponse,
   RegisterAgentOutputsRequest,
   RegisterAgentOutputsResponse,
   RegisterCaptureChunkRequest,
@@ -244,6 +245,19 @@ export function getActionRecommendations(meetingId: string) {
   return request<ActionRecommendationsResponse>(
     `/api/meetings/${meetingId}/actions/recommendations`,
   );
+}
+
+export function searchKnowledge(params: {
+  q?: string;
+  recordType?: string | null;
+  limit?: number;
+}) {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.recordType) search.set("recordType", params.recordType);
+  if (params.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return request<OutcomeSearchResponse>(`/api/knowledge/search${qs ? `?${qs}` : ""}`);
 }
 
 export function approveActionRecommendation(

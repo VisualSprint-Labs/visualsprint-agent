@@ -564,6 +564,29 @@ class SearchPriorOutcomesResponse(BaseModel):
     matches: list[MemoryMatch]
 
 
+class OutcomeSearchResult(BaseModel):
+    recordType: ReasoningRecordType
+    summary: str
+    detail: str
+    status: ReasoningRecordStatus
+    meetingId: str
+    meetingTitle: str
+    ownerLabel: str | None = None
+    speakerLabel: str | None = None
+    dueHint: str | None = None
+    severity: BlockerSeverity | None = None
+    updatedAt: datetime
+    score: float
+
+
+class OutcomeSearchResponse(BaseModel):
+    query: str
+    recordType: ReasoningRecordType | None = None
+    available: bool
+    total: int
+    results: list[OutcomeSearchResult]
+
+
 class IndexedOutcomeDocument(BaseModel):
     id: str
     meetingId: str
