@@ -934,3 +934,26 @@ def test_build_settings_supports_elastic_configuration():
     assert settings.elastic_mcp_server_configured is True
     assert settings.elastic_writeback_configured is True
     assert settings.elastic_index_outcomes == "visualsprint-outcomes"
+
+
+def test_demo_seed_creates_populated_meeting(client: TestClient):
+    response = client.post("/api/dev/demo-seed")
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["meeting"]["title"] == "Release readiness sync"
+    assert payload["meeting"]["status"] == "ended"
+    assert payload["meeting"]["metrics"]["decisionsCount"] > 0
+    assert payload["meeting"]["metrics"]["commitmentsCount"] > 0
+    assert payload["meeting"]["metrics"]["blockersCount"] > 0
+    assert payload["meeting"]["metrics"]["actionRecommendationsCount"] > 0
+
+
+def test_demo_seed_not_available_when_disabled(client: TestClient, monkeypatch):
+    import visualsprint_api.routes.dev as dev_module
+    from visualsprint_api.config import build_settings
+
+    monkeypatch.setattr(
+        dev_module, "settings", build_settings({"VISUALSPRINT_ENV": "production"})
+    )
+    response = client.post("/api/dev/demo-seed")
+    assert response.status_code == 403

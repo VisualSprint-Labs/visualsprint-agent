@@ -95,6 +95,12 @@ export function getMeetingEventsUrl(meetingId: string) {
   return `${defaultApiBaseUrl}/api/meetings/${meetingId}/events`;
 }
 
+export function seedDemoMeeting() {
+  return request<MeetingDetailResponse>("/api/dev/demo-seed", {
+    method: "POST",
+  });
+}
+
 export function listMeetings() {
   return request<MeetingListResponse>("/api/meetings");
 }

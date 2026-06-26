@@ -1,7 +1,7 @@
 "use client";
 
 import type { PlatformMetaResponse } from "@visualsprint/contracts";
-import { Activity, Zap } from "lucide-react";
+import { Activity, Sprout } from "lucide-react";
 
 import { Card } from "../../components/ui/card";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -57,6 +57,7 @@ export function DevPanelsPage() {
     chunkInsight,
     summaryPacket,
     indexedOutcomes,
+    loadDemoMeeting,
   } = useMeetingSession();
 
   return (
@@ -68,6 +69,29 @@ export function DevPanelsPage() {
       </header>
 
       <div className="grid gap-6 xl:grid-cols-2">
+        <Card title="Demo seed" eyebrow="Hackathon helper">
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-foreground-muted">
+              Instantly create a fully populated demo meeting with transcript, screen events,
+              decisions, blockers, memory matches, final report, and action recommendations.
+            </p>
+            <Button
+              leftIcon={<Sprout size={16} strokeWidth={2} />}
+              disabled={isBusy}
+              onClick={() => {
+                void loadDemoMeeting();
+              }}
+            >
+              Load demo meeting
+            </Button>
+            {meeting ? (
+              <p className="text-sm text-foreground-muted">
+                Selected: <span className="font-medium text-foreground">{meeting.title}</span>
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
         <Card title="Platform topology" eyebrow="Service boundaries">
           {platformMeta ? (
             <div className="space-y-4">

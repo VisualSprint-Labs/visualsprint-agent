@@ -105,7 +105,7 @@ def test_reasoning_vertex_with_content_skips_fallback(monkeypatch):
     assert audit_store.snapshot()[0].status == "success"
 
 
-def test_reasoning_vertex_empty_uses_fallback(monkeypatch):
+def test_reasoning_vertex_empty_returns_empty_response(monkeypatch):
     _configure_reasoning_cloud(monkeypatch)
     monkeypatch.setattr(
         reasoning_module, "invoke_reasoning_agent", _empty_reasoning_response
@@ -113,19 +113,21 @@ def test_reasoning_vertex_empty_uses_fallback(monkeypatch):
 
     response = reasoning_module.run_reasoning_agent(_reasoning_payload())
 
-    assert response.decisions or response.commitments or response.blockers
+    assert not (response.decisions or response.commitments or response.blockers)
+    assert response.clientChunkId == _reasoning_payload().clientChunkId
     assert audit_store.snapshot()[0].execution_mode == "vertex_ai_fallback"
     assert audit_store.snapshot()[0].status == "fallback"
     assert "returned no reasoning output" in audit_store.snapshot()[0].detail
 
 
-def test_reasoning_vertex_failure_uses_fallback(monkeypatch):
+def test_reasoning_vertex_failure_returns_empty_response(monkeypatch):
     _configure_reasoning_cloud(monkeypatch)
     monkeypatch.setattr(reasoning_module, "invoke_reasoning_agent", lambda payload: None)
 
     response = reasoning_module.run_reasoning_agent(_reasoning_payload())
 
-    assert response.decisions or response.commitments or response.blockers
+    assert not (response.decisions or response.commitments or response.blockers)
+    assert response.clientChunkId == _reasoning_payload().clientChunkId
     assert audit_store.snapshot()[0].execution_mode == "vertex_ai_fallback"
     assert audit_store.snapshot()[0].status == "fallback"
     assert "unavailable" in audit_store.snapshot()[0].detail

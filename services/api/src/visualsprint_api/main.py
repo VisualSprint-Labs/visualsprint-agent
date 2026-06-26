@@ -9,6 +9,7 @@ from visualsprint_api.config import settings
 from visualsprint_api.routes.actions import router as actions_router
 from visualsprint_api.routes.agents import router as agents_router
 from visualsprint_api.routes.capture import router as capture_router
+from visualsprint_api.routes.dev import router as dev_router
 from visualsprint_api.routes.health import router as health_router
 from visualsprint_api.routes.insights import router as insights_router
 from visualsprint_api.routes.knowledge import router as knowledge_router
@@ -34,6 +35,8 @@ if settings.allowed_origins:
     )
 
 app.include_router(health_router, prefix="/api")
+if settings.demo_seed_enabled:
+    app.include_router(dev_router, prefix="/api")
 app.include_router(meta_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(meetings_router, prefix="/api")

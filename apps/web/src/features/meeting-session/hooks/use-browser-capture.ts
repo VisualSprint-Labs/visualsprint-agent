@@ -7,6 +7,7 @@ import {
   blobToBase64,
   buildCaptureResources,
   buildClientChunkId,
+  hasAudioCoverageWarning,
   resolveRecorderMimeType,
 } from "../../../lib/capture";
 import { getErrorMessage } from "../../../lib/format";
@@ -42,7 +43,10 @@ export function useBrowserCapture({
 }) {
   const [capturePhase, setCapturePhase] = useState<CapturePhase>("idle");
   const meetingRef = useRef(meeting);
-  meetingRef.current = meeting;
+
+  useEffect(() => {
+    meetingRef.current = meeting;
+  }, [meeting]);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -238,11 +242,25 @@ export function useBrowserCapture({
     try {
       resources = await buildCaptureResources();
       const preferredMimeType = resolveRecorderMimeType();
+
+      if (
+        hasAudioCoverageWarning(
+          resources.displaySurface,
+          resources.hasDisplayAudio,
+          resources.hasMicrophoneAudio,
+        )
+      ) {
+        onError(
+          "You are sharing only a window and no audio source was detected. Transcription may be empty unless you also share system audio or use a microphone.",
+        );
+      }
+
       const response = await startCaptureSession(currentMeeting.id, {
         recorderMimeType: preferredMimeType || null,
         hasDisplayVideo: resources.hasDisplayVideo,
         hasDisplayAudio: resources.hasDisplayAudio,
         hasMicrophoneAudio: resources.hasMicrophoneAudio,
+        displaySurface: resources.displaySurface,
       });
 
       streamRef.current = resources.stream;

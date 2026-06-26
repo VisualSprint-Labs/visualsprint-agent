@@ -29,6 +29,9 @@ def get_health() -> ServiceHealth:
         service=settings.service_name,
         version=settings.version,
         track=settings.selected_track,
+        gcsBucketConfigured=settings.gcs_bucket is not None,
+        googleCloudProjectConfigured=settings.google_cloud_project is not None,
+        realPipelineEnabled=settings.real_pipeline_enabled,
     )
 
 

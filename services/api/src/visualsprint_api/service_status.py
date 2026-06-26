@@ -68,6 +68,14 @@ def _probe_service(
     try:
         response = request.urlopen(health_url, timeout=settings.service_request_timeout_seconds)
         payload = json.loads(response.read().decode("utf-8"))
+        real_enabled = payload.get("realPipelineEnabled") is True
+        note = f"{service_name} responded successfully"
+        if kind in {"ingest", "media"}:
+            note = (
+                f"{note}; real pipeline is {'enabled' if real_enabled else 'disabled'}."
+            )
+        else:
+            note = f"{note} to a health probe."
         return DownstreamServiceStatus(
             service=payload.get("service", service_name),
             kind=kind,
@@ -78,7 +86,7 @@ def _probe_service(
             status="ok",
             version=payload.get("version"),
             track=payload.get("track"),
-            note=f"{service_name} responded successfully to a health probe.",
+            note=note,
         )
     except (error.URLError, error.HTTPError, json.JSONDecodeError):
         return DownstreamServiceStatus(

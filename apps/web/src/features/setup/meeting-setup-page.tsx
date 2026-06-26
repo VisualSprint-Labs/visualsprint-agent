@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Clock, Radio, CheckCircle2, ChevronRight, Sparkles, LayoutList } from "lucide-react";
+import { Clock, ChevronRight, Sparkles, LayoutList } from "lucide-react";
 
 import { ErrorBanner } from "../../components/shared/error-banner";
 import { StatusPill } from "../../components/ui/status-pill";
-import { Button } from "../../components/ui/button";
 import { useMeetingSession } from "../meeting-session/context/meeting-session-provider";
 import { CaptureReadiness } from "./components/capture-readiness";
 import { CaptureStepper } from "./components/capture-stepper";

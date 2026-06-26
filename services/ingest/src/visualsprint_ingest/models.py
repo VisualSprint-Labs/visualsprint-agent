@@ -44,6 +44,7 @@ class ChunkTranscriptRequest(BaseModel):
     recordedAt: datetime
     durationMs: int = Field(ge=250, le=120_000)
     mimeType: str = Field(min_length=3, max_length=120)
+    storageObjectPath: str = Field(default="", min_length=0, max_length=240)
 
 
 class ChunkTranscriptResponse(BaseModel):
@@ -58,3 +59,6 @@ class ServiceHealth(BaseModel):
     status: Literal["ok"] = "ok"
     version: str
     track: str
+    gcsBucketConfigured: bool = False
+    googleCloudProjectConfigured: bool = False
+    realPipelineEnabled: bool = False

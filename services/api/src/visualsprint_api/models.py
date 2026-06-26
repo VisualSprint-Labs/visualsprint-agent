@@ -225,6 +225,7 @@ class CaptureSessionSummary(BaseModel):
     hasDisplayVideo: bool
     hasDisplayAudio: bool
     hasMicrophoneAudio: bool
+    displaySurface: str = Field(default="unknown", min_length=2, max_length=20)
     startedAt: datetime
     endedAt: datetime | None = None
     chunkCount: int = 0
@@ -429,6 +430,7 @@ class StartCaptureSessionRequest(BaseModel):
     hasDisplayVideo: bool = True
     hasDisplayAudio: bool = False
     hasMicrophoneAudio: bool = False
+    displaySurface: str = Field(default="unknown", min_length=2, max_length=20)
 
 
 class RegisterCaptureChunkRequest(BaseModel):
@@ -518,6 +520,8 @@ class ChunkInsight(BaseModel):
     focusAreas: list[ChunkInsightFocus] = Field(default_factory=list, max_length=6)
     memoryQueries: list["SearchPriorOutcomesRequest"] = Field(default_factory=list, max_length=6)
     memoryMatches: list[MemoryMatch] = Field(default_factory=list, max_length=6)
+    transcriptSegments: list[TranscriptSegment] = Field(default_factory=list)
+    screenEvents: list[ScreenEvent] = Field(default_factory=list)
     meetingState: MeetingStateSnapshot
     chunkContext: ChunkContext
 

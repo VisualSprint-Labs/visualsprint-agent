@@ -1,9 +1,12 @@
+export type DisplaySurface = "browser" | "window" | "monitor" | "unknown";
+
 export type CaptureResources = {
   stream: MediaStream;
   cleanup: () => void;
   hasDisplayVideo: boolean;
   hasDisplayAudio: boolean;
   hasMicrophoneAudio: boolean;
+  displaySurface: DisplaySurface;
 };
 
 export function buildClientChunkId(captureSessionId: string, sequence: number) {
@@ -98,11 +101,35 @@ export function resolveRecorderMimeType() {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
 }
 
+function detectDisplaySurface(videoTrack: MediaStreamTrack): DisplaySurface {
+  if (typeof videoTrack.getSettings !== "function") {
+    return "unknown";
+  }
+  const settings = videoTrack.getSettings() as { displaySurface?: string };
+  const surface = settings.displaySurface;
+  if (
+    surface === "browser" ||
+    surface === "window" ||
+    surface === "monitor"
+  ) {
+    return surface;
+  }
+  return "unknown";
+}
+
 export async function buildCaptureResources(): Promise<CaptureResources> {
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
     video: true,
     audio: true,
   });
+
+  const displayVideoTracks = displayStream.getVideoTracks();
+  const displayAudioTracks = displayStream.getAudioTracks();
+
+  const displaySurface =
+    displayVideoTracks.length > 0
+      ? detectDisplaySurface(displayVideoTracks[0])
+      : "unknown";
 
   let microphoneStream: MediaStream | null = null;
   try {
@@ -111,12 +138,10 @@ export async function buildCaptureResources(): Promise<CaptureResources> {
     microphoneStream = null;
   }
 
+  const microphoneAudioTracks = microphoneStream?.getAudioTracks() ?? [];
+
   const composedStream = new MediaStream();
   const cleanupCallbacks: Array<() => void> = [];
-
-  const displayVideoTracks = displayStream.getVideoTracks();
-  const displayAudioTracks = displayStream.getAudioTracks();
-  const microphoneAudioTracks = microphoneStream?.getAudioTracks() ?? [];
 
   displayVideoTracks.forEach((track) => composedStream.addTrack(track));
 
@@ -166,5 +191,16 @@ export async function buildCaptureResources(): Promise<CaptureResources> {
     hasDisplayVideo: displayVideoTracks.length > 0,
     hasDisplayAudio: displayAudioTracks.length > 0,
     hasMicrophoneAudio: microphoneAudioTracks.length > 0,
+    displaySurface,
   };
+}
+
+export function hasAudioCoverageWarning(
+  displaySurface: DisplaySurface,
+  hasDisplayAudio: boolean,
+  hasMicrophoneAudio: boolean,
+): boolean {
+  // When sharing only a window (e.g. a Zoom meeting window), the browser often
+  // does not capture system audio. Warn the user unless microphone audio is present.
+  return displaySurface === "window" && !hasDisplayAudio && !hasMicrophoneAudio;
 }

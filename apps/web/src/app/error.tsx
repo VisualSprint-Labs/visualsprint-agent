@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { RotateCcw, LayoutList } from "lucide-react";
 
 import { Button } from "../components/ui/button";
@@ -27,11 +28,11 @@ export default function GlobalError({
         <Button leftIcon={<RotateCcw size={16} strokeWidth={2} />} onClick={reset}>
           Try again
         </Button>
-        <a href="/meetings">
+        <Link href="/meetings">
           <Button variant="secondary" leftIcon={<LayoutList size={16} strokeWidth={2} />}>
             Meetings
           </Button>
-        </a>
+        </Link>
       </div>
     </div>
   );

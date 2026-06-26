@@ -71,6 +71,8 @@ def build_chunk_insight(
         ],
         focusAreas=focus_areas,
         memoryQueries=memory_queries,
+        transcriptSegments=[segment.model_copy(deep=True) for segment in transcript_segments],
+        screenEvents=[screen_event.model_copy(deep=True) for screen_event in screen_events],
         meetingState=meeting_state,
         chunkContext=chunk_context,
     )

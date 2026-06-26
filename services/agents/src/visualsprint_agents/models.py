@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,22 @@ class ChunkInsightFocus(BaseModel):
     evidence: list[str] = Field(default_factory=list)
 
 
+class TranscriptSegmentInput(BaseModel):
+    id: str
+    speakerLabel: str = Field(min_length=2, max_length=60)
+    startedAt: datetime
+    endedAt: datetime
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class ScreenEventInput(BaseModel):
+    id: str
+    kind: str = Field(min_length=2, max_length=40)
+    summary: str = Field(min_length=1, max_length=300)
+    frameTimestampMs: int = Field(ge=0)
+    recordedAt: datetime
+
+
 class ChunkInsightRequest(BaseModel):
     meetingId: str
     meetingTitle: str
@@ -62,8 +78,8 @@ class ChunkInsightRequest(BaseModel):
     reasoningChecklist: list[str] = Field(default_factory=list)
     focusAreas: list[ChunkInsightFocus] = Field(default_factory=list)
     memoryMatches: list[AgentMemoryMatchInput] = Field(default_factory=list)
-    transcriptSegments: list[Any] = Field(default_factory=list)
-    screenEvents: list[Any] = Field(default_factory=list)
+    transcriptSegments: list[TranscriptSegmentInput] = Field(default_factory=list)
+    screenEvents: list[ScreenEventInput] = Field(default_factory=list)
 
 
 class AgentDecisionInput(BaseModel):

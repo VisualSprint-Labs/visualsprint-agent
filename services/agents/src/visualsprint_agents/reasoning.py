@@ -1,4 +1,4 @@
-"""Deterministic reasoning-agent stub for development."""
+"""Reasoning-agent adapter for VisualSprint."""
 
 from __future__ import annotations
 
@@ -23,7 +23,17 @@ def _reasoning_response_has_content(response: ReasoningRunResponse) -> bool:
         or response.blockers
         or response.openQuestions
         or response.memoryMatches
+        or response.resolvedDecisionIds
+        or response.resolvedCommitmentIds
+        or response.resolvedBlockerIds
+        or response.resolvedOpenQuestionIds
     )
+
+
+def _empty_reasoning_response(payload: ChunkInsightRequest) -> ReasoningRunResponse:
+    """Return a schema-valid empty response so the caller can choose fallback."""
+
+    return ReasoningRunResponse(clientChunkId=payload.clientChunkId)
 
 
 def run_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse:
@@ -57,32 +67,36 @@ def run_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse:
         empty_cloud_response = (
             cloud_response is not None and not _reasoning_response_has_content(cloud_response)
         )
+        is_vertex = settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
+        if is_vertex and empty_cloud_response:
+            detail = "Configured Vertex AI runtime returned no reasoning output."
+        elif is_vertex:
+            detail = "Configured Vertex AI runtime was unavailable."
+        elif empty_cloud_response:
+            detail = "Configured bridge returned no reasoning output."
+        else:
+            detail = "Configured bridge was unavailable."
+
         audit_store.record(
             agent_kind="reasoning",
-            execution_mode=(
-                "vertex_ai_fallback"
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "bridge_fallback"
-            ),
+            execution_mode="vertex_ai_fallback" if is_vertex else "bridge_fallback",
             status="fallback",
             target_agent_id=(
                 settings.reasoning_engine_resource_name
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
+                if is_vertex
                 else settings.reasoning_agent_id
             ),
             request_key=payload.clientChunkId,
-            detail=(
-                "Configured Vertex AI runtime returned no reasoning output, so deterministic reasoning fallback was used."
-                if empty_cloud_response
-                and settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "Configured bridge returned no reasoning output, so deterministic reasoning fallback was used."
-                if empty_cloud_response
-                else "Configured Vertex AI runtime was unavailable, so deterministic reasoning fallback was used."
-                if settings.agent_runtime_backend == "vertex_ai_reasoning_engine"
-                else "Configured bridge was unavailable, so deterministic reasoning fallback was used."
-            ),
+            detail=detail,
         )
-        return _run_configured_reasoning_agent_stub(payload)
+
+        # Vertex empty/failure is treated as a real "no durable signals" result so
+        # the control plane does not hallucinate. Bridge failures fall back to the
+        # deterministic template so the UI stays usable.
+        if is_vertex:
+            return _empty_reasoning_response(payload)
+        return _run_mock_reasoning_agent(payload)
+
     audit_store.record(
         agent_kind="reasoning",
         execution_mode="mock",
@@ -95,10 +109,17 @@ def run_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse:
 
 
 def _run_mock_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunResponse:
-    """Generate deterministic reasoning outputs from the assembled insight."""
+    """Generate deterministic reasoning outputs from the assembled insight.
 
-    decision_summary = payload.focusAreas[0].summary if payload.focusAreas else payload.focusSummary
-    primary_detail = payload.focusAreas[0].detail if payload.focusAreas else payload.focusSummary
+    Only used in mock mode for local development / unit tests.
+    """
+
+    decision_summary = (
+        payload.focusAreas[0].summary if payload.focusAreas else payload.focusSummary
+    )
+    primary_detail = (
+        payload.focusAreas[0].detail if payload.focusAreas else payload.focusSummary
+    )
     decision = AgentDecisionInput(
         title=f"Decide on {decision_summary.lower()}",
         rationale=primary_detail,
@@ -140,9 +161,3 @@ def _run_mock_reasoning_agent(payload: ChunkInsightRequest) -> ReasoningRunRespo
         openQuestions=[open_question],
         memoryMatches=[memory_match],
     )
-
-
-def _run_configured_reasoning_agent_stub(payload: ChunkInsightRequest) -> ReasoningRunResponse:
-    """Keep the response schema stable until the real SDK/tool-calling path lands."""
-
-    return _run_mock_reasoning_agent(payload)

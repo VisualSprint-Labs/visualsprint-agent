@@ -12,6 +12,11 @@ from uuid import uuid4
 
 from visualsprint_api.config import settings
 from visualsprint_api.vision_pipeline import analyze_chunk_media
+from visualsprint_api.demo_seed import (
+    build_demo_action_recommendations,
+    build_demo_final_report,
+    build_demo_meeting,
+)
 from visualsprint_api.elastic_client import (
     search_outcomes_in_elasticsearch,
     search_prior_outcomes_in_elasticsearch,
@@ -84,6 +89,20 @@ def _normalize_recorder_mime_type(value: str | None) -> str:
     if value is None or not value.strip():
         return "browser-default"
     return value.strip()
+
+
+def _agent_outputs_have_content(payload: RegisterAgentOutputsRequest) -> bool:
+    return bool(
+        payload.decisions
+        or payload.commitments
+        or payload.blockers
+        or payload.openQuestions
+        or payload.memoryMatches
+        or payload.resolvedDecisionIds
+        or payload.resolvedCommitmentIds
+        or payload.resolvedBlockerIds
+        or payload.resolvedOpenQuestionIds
+    )
 
 
 DECISION_TEMPLATES = (
@@ -184,6 +203,30 @@ class MeetingStore:
             self._final_reports.clear()
             self._indexed_outcomes.clear()
             self._action_recommendations.clear()
+
+    def seed_demo_meeting(self) -> MeetingDetail:
+        """Create a fully populated demo meeting for hackathon recordings.
+
+        Bypasses the real capture pipeline and directly injects realistic transcripts,
+        screen events, reasoning outputs, a final report, and action recommendations.
+        """
+
+        with self._lock:
+            meeting = build_demo_meeting()
+            report = build_demo_final_report(meeting.id, meeting.endedAt or _utc_now())
+            recommendations = build_demo_action_recommendations(meeting.id)
+
+            self._meetings[meeting.id] = meeting
+            self._meeting_revisions[meeting.id] = 0
+            self._final_reports[meeting.id] = report
+
+            for recommendation in recommendations:
+                self._action_recommendations[(meeting.id, recommendation.id)] = recommendation
+                meeting.recentActionRecommendations.append(recommendation)
+
+            meeting.metrics.actionRecommendationsCount = len(recommendations)
+            self._mark_meeting_updated(meeting.id)
+            return meeting.model_copy(deep=True)
 
     def list_meetings(self) -> list[MeetingSummary]:
         with self._lock:
@@ -640,6 +683,7 @@ class MeetingStore:
                 hasDisplayVideo=payload.hasDisplayVideo,
                 hasDisplayAudio=payload.hasDisplayAudio,
                 hasMicrophoneAudio=payload.hasMicrophoneAudio,
+                displaySurface=payload.displaySurface,
                 startedAt=started_at,
                 endedAt=None,
                 chunkCount=0,
@@ -1053,7 +1097,7 @@ class MeetingStore:
         )
         agent_outputs, reasoning_source = run_chunk_reasoning_with_source(chunk_insight)
         chunk.reasoningSource = reasoning_source
-        if agent_outputs is not None:
+        if agent_outputs is not None and _agent_outputs_have_content(agent_outputs):
             signal_count = self._apply_agent_outputs_to_meeting(
                 meeting=meeting,
                 payload=agent_outputs,

@@ -109,6 +109,7 @@ def process_transcript_chunk_with_source(
         "recordedAt": chunk.recordedAt.isoformat(),
         "durationMs": chunk.durationMs,
         "mimeType": chunk.mimeType,
+        "storageObjectPath": chunk.storageObjectPath,
     }
 
     try:
@@ -172,6 +173,7 @@ def process_media_chunk_with_source(
         "recordedAt": chunk.recordedAt.isoformat(),
         "durationMs": chunk.durationMs,
         "mimeType": chunk.mimeType,
+        "storageObjectPath": chunk.storageObjectPath,
     }
 
     try:

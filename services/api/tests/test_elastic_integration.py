@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from visualsprint_api.config import build_settings
 from visualsprint_api.elastic_mapping import (
@@ -25,8 +25,8 @@ def test_indexed_outcome_mapping_builds_elastic_document():
         severity=None,
         firstSeenChunkId="client-chunk-1234",
         lastUpdatedChunkId="client-chunk-1234",
-        createdAt=datetime(2026, 6, 8, 10, 0, tzinfo=UTC),
-        updatedAt=datetime(2026, 6, 8, 10, 5, tzinfo=UTC),
+        createdAt=datetime(2026, 6, 8, 10, 0, tzinfo=timezone.utc),
+        updatedAt=datetime(2026, 6, 8, 10, 5, tzinfo=timezone.utc),
         evidence=[
             EvidenceReference(
                 chunkId="chk_123",
@@ -69,8 +69,8 @@ def test_elastic_document_mapping_can_build_memory_match():
             severity="high",
             firstSeenChunkId="client-chunk-1234",
             lastUpdatedChunkId="client-chunk-1235",
-            createdAt=datetime(2026, 6, 8, 10, 0, tzinfo=UTC),
-            updatedAt=datetime(2026, 6, 8, 10, 5, tzinfo=UTC),
+            createdAt=datetime(2026, 6, 8, 10, 0, tzinfo=timezone.utc),
+            updatedAt=datetime(2026, 6, 8, 10, 5, tzinfo=timezone.utc),
             evidence=[],
         ),
     )
@@ -78,7 +78,7 @@ def test_elastic_document_mapping_can_build_memory_match():
     match = map_elastic_document_to_memory_match(
         document=document,
         score=0.84,
-        recorded_at=datetime(2026, 6, 8, 10, 10, tzinfo=UTC),
+        recorded_at=datetime(2026, 6, 8, 10, 10, tzinfo=timezone.utc),
     )
 
     assert isinstance(match, MemoryMatch)

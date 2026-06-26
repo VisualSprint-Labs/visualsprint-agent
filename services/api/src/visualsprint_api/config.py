@@ -26,6 +26,37 @@ def _get_any(environ: Mapping[str, str], *keys: str) -> str | None:
     return None
 
 
+def _looks_like_secret_manager_resource(value: str) -> bool:
+    return value.startswith("projects/") and "/secrets/" in value
+
+
+def _resolve_elastic_api_key(
+    environ: Mapping[str, str],
+    secret_name: str | None,
+) -> str | None:
+    """Return the Elastic API key value, resolving a Secret Manager resource if needed."""
+
+    direct_key = _get(environ, "ELASTICSEARCH_API_KEY")
+    if direct_key:
+        return direct_key
+
+    if not secret_name:
+        return None
+
+    if not _looks_like_secret_manager_resource(secret_name):
+        # Treat the value as the raw encoded key for local/dev convenience.
+        return secret_name
+
+    try:
+        from google.cloud import secretmanager
+
+        client = secretmanager.SecretManagerServiceClient()
+        response = client.access_secret_version(request={"name": f"{secret_name}/versions/latest"})
+        return response.payload.data.decode("UTF-8")
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True)
 class Settings:
     service_name: str = "visualsprint-api"
@@ -36,14 +67,15 @@ class Settings:
     ingest_service_url: str | None = None
     media_service_url: str | None = None
     elasticsearch_url: str | None = None
+    elasticsearch_api_key: str | None = None
     elasticsearch_api_key_secret: str | None = None
     elastic_index_outcomes: str | None = None
     elastic_mcp_server_url: str | None = None
     jira_base_url: str | None = None
-    jira_api_token_secret: str | None = None
+    jira_api_token: str | None = None
     jira_email: str | None = None
     jira_project_key: str | None = None
-    slack_bot_token_secret: str | None = None
+    slack_bot_token: str | None = None
     slack_default_channel: str | None = None
     service_request_timeout_seconds: float = 0.5
     google_cloud_project: str | None = None
@@ -69,12 +101,21 @@ class Settings:
         return self.google_cloud_project is not None
 
     @property
+    def is_dev_mode(self) -> bool:
+        return self.environment.lower() == "development"
+
+    @property
+    def demo_seed_enabled(self) -> bool:
+        """Demo seed is enabled in development or when explicitly opted in."""
+        return self.is_dev_mode
+
+    @property
     def elasticsearch_url_configured(self) -> bool:
         return self.elasticsearch_url is not None
 
     @property
     def elasticsearch_api_key_configured(self) -> bool:
-        return self.elasticsearch_api_key_secret is not None
+        return self.elasticsearch_api_key is not None or self.elasticsearch_api_key_secret is not None
 
     @property
     def elastic_mcp_server_configured(self) -> bool:
@@ -84,7 +125,7 @@ class Settings:
     def elastic_writeback_configured(self) -> bool:
         return bool(
             self.elasticsearch_url
-            and self.elasticsearch_api_key_secret
+            and (self.elasticsearch_api_key or self.elasticsearch_api_key_secret)
             and self.elastic_index_outcomes
         )
 
@@ -118,7 +159,15 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         elasticsearch_api_key_secret=_get_any(
             source,
             "ELASTICSEARCH_API_KEY_SECRET",
-            "ELASTICSEARCH_API_KEY",
+            "ELASTICSEARCH_API_KEY_SECRET_NAME",
+        ),
+        elasticsearch_api_key=_resolve_elastic_api_key(
+            source,
+            _get_any(
+                source,
+                "ELASTICSEARCH_API_KEY_SECRET",
+                "ELASTICSEARCH_API_KEY_SECRET_NAME",
+            ),
         ),
         elastic_index_outcomes=_get_any(
             source,
@@ -127,10 +176,10 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ),
         elastic_mcp_server_url=_get(source, "ELASTIC_MCP_SERVER_URL"),
         jira_base_url=_get(source, "JIRA_BASE_URL"),
-        jira_api_token_secret=_get(source, "JIRA_API_TOKEN_SECRET"),
+        jira_api_token=_get(source, "JIRA_API_TOKEN_SECRET"),
         jira_email=_get(source, "JIRA_EMAIL"),
         jira_project_key=_get(source, "JIRA_PROJECT_KEY"),
-        slack_bot_token_secret=_get(source, "SLACK_BOT_TOKEN_SECRET"),
+        slack_bot_token=_get(source, "SLACK_BOT_TOKEN_SECRET"),
         slack_default_channel=_get(source, "SLACK_DEFAULT_CHANNEL"),
         service_request_timeout_seconds=float(
             source.get("VISUALSPRINT_SERVICE_TIMEOUT_SECONDS", "0.5")

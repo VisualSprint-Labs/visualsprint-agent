@@ -53,19 +53,23 @@ def build_reasoning_agent_blueprint() -> AgentBlueprint:
         instructions=(
             "The input JSON contains `focusSummary` (a plain-text digest of this chunk), "
             "`focusAreas` (pre-identified signals with recordType, summary, detail), "
-            "and optionally `transcriptSegments` (timestamped speaker utterances). "
-            "Use all three as your evidence base.",
+            "and optionally `transcriptSegments` (timestamped speaker utterances) and "
+            "`screenEvents` (visible screen activity). Use all as your evidence base.",
             "Each `focusAreas` item is a confirmed signal: map it directly to the matching "
             "output array. `decision` → decisions[], `commitment` → commitments[], "
             "`blocker` → blockers[], `open_question` → openQuestions[].",
             "Also extract any additional clear decisions, commitments, blockers, or open "
-            "questions you find in `transcriptSegments` that are not already covered by focusAreas.",
+            "questions from `transcriptSegments` or `screenEvents` not already in focusAreas. "
+            "Screen evidence matters: if the visible screen shows code, terminals, errors, "
+            "diagrams, or slides, anchor blockers and decisions to that visual evidence.",
             "For `speakerLabel` and `ownerLabel`: use names from the transcript if present, "
             "otherwise use 'unknown'.",
-            "Prefer updates or resolutions over duplicate new records when the running state "
-            "already contains the issue.",
-            "Only call `search_prior_outcomes` when you need historical depth beyond what "
-            "memoryMatches already provide.",
+            "Prefer updates, resolutions, or reopen events over duplicate net-new records "
+            "when the running state already contains the issue.",
+            "Treat backend-injected memoryMatches as pre-searched historical context and "
+            "only call `search_prior_outcomes` when you need additional comparison depth.",
+            "Do not invent evidence that is not present in the supplied transcriptSegments or screenEvents.",
+            "If the chunk contains no durable decision, commitment, blocker, or open question, return empty arrays.",
             _REASONING_OUTPUT_SCHEMA,
         ),
         tools=(
