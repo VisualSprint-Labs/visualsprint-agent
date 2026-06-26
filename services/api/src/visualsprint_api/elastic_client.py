@@ -160,22 +160,24 @@ def search_outcomes_in_elasticsearch(
         # No query text: browse the most recent outcomes (optionally filtered).
         bool_query = {"filter": filters}
 
-    body = {
-        "size": size,
-        "_source": True,
-        "query": {"bool": bool_query},
-        "sort": (
-            ["_score", {"updated_at": {"order": "desc", "unmapped_type": "date"}}]
-            if trimmed
-            else [{"updated_at": {"order": "desc", "unmapped_type": "date"}}]
-        ),
-    }
-    response = _elastic_request_json(
-        config=config,
-        method="POST",
-        path=f"/{parse.quote(config.elastic_index_outcomes, safe='')}/_search",
-        payload=body,
+    path = f"/{parse.quote(config.elastic_index_outcomes, safe='')}/_search"
+    base_body = {"size": size, "_source": True, "query": {"bool": bool_query}}
+    sort_clause = (
+        ["_score", {"updated_at": {"order": "desc", "unmapped_type": "date"}}]
+        if trimmed
+        else [{"updated_at": {"order": "desc", "unmapped_type": "date"}}]
     )
+
+    # Prefer recency-sorted results, but a site whose `updated_at` is mapped as
+    # text would reject the sort — fall back to an unsorted query so search still
+    # works rather than silently returning nothing.
+    response = _elastic_request_json(
+        config=config, method="POST", path=path, payload={**base_body, "sort": sort_clause}
+    )
+    if response is None:
+        response = _elastic_request_json(
+            config=config, method="POST", path=path, payload=base_body
+        )
     if response is None:
         return None
 
