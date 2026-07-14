@@ -22,6 +22,10 @@ from visualsprint_api.elastic_client import (
     search_prior_outcomes_in_elasticsearch,
     upsert_indexed_outcomes_to_elasticsearch,
 )
+from visualsprint_api.elastic_mapping import (
+    map_elastic_document_to_memory_match,
+    map_indexed_outcome_to_elastic_document,
+)
 from visualsprint_api.insight_pipeline import build_chunk_insight
 from visualsprint_api.action_executors import execute_jira_action, execute_slack_action
 from visualsprint_api.models import (
@@ -444,38 +448,14 @@ class MeetingStore:
                 return [match.model_copy(deep=True) for match in elastic_matches[:3]]
             return [self._build_empty_memory_match(meeting_copy)]
 
-        normalized_text = f"{payload.summary} {payload.detail}".lower()
-        matches: list[MemoryMatch] = []
+        local_matches = self._search_local_prior_outcomes(
+            current_meeting_id=meeting_id,
+            payload=payload,
+        )
+        if local_matches:
+            return [match.model_copy(deep=True) for match in local_matches[:3]]
 
-        for (
-            source_meeting_id,
-            summary,
-            source_meeting_title,
-            strength,
-            relation,
-            score,
-            snippet,
-        ) in MEMORY_TEMPLATES:
-            keywords = _keywords_for_memory_template(source_meeting_id)
-            if any(keyword in normalized_text for keyword in keywords):
-                matches.append(
-                    MemoryMatch(
-                        id=f"mem_{uuid4().hex[:12]}",
-                        sourceMeetingId=source_meeting_id,
-                        summary=summary,
-                        sourceMeetingTitle=source_meeting_title,
-                        strength=strength,
-                        relation=relation,
-                        score=score,
-                        snippet=snippet,
-                        recordedAt=_utc_now(),
-                    )
-                )
-
-        if len(matches) == 0:
-            matches.append(self._build_empty_memory_match(meeting_copy))
-
-        return [match.model_copy(deep=True) for match in matches[:3]]
+        return [self._build_empty_memory_match(meeting_copy)]
 
     def search_outcomes(
         self,
@@ -492,8 +472,11 @@ class MeetingStore:
             limit=limit,
         )
         if hits is None:
-            # Elastic write-back is not configured — search is genuinely unavailable.
-            return False, []
+            return True, self._search_local_outcomes(
+                query=query,
+                record_type=record_type,
+                limit=limit,
+            )
         results = [
             OutcomeSearchResult(
                 recordType=document.record_type,
@@ -1184,26 +1167,25 @@ class MeetingStore:
             )
             signal_count += 1
 
-        (
-            source_meeting_id,
-            memory_summary,
-            source_meeting_title,
-            strength,
-            relation,
-            score,
-            snippet,
-        ) = MEMORY_TEMPLATES[template_index]
-        memory_match = MemoryMatch(
-            id=f"mem_{uuid4().hex[:12]}",
-            sourceMeetingId=source_meeting_id,
-            summary=memory_summary,
-            sourceMeetingTitle=source_meeting_title,
-            strength=strength,
-            relation=relation,
-            score=score,
-            snippet=snippet,
-            recordedAt=final_end,
+        memory_query_parts = [decision_title]
+        if chunk.sequence % 3 != 0:
+            memory_query_parts.append(blocker_summary)
+        memory_match = self._find_local_memory_match_unlocked(
+            meeting_id=meeting.id,
+            query_text=" ".join(memory_query_parts),
         )
+        if memory_match is None:
+            memory_match = MemoryMatch(
+                id=f"mem_{uuid4().hex[:12]}",
+                sourceMeetingId=f"{meeting.id}_new_signal",
+                summary="No strong historical match was found for this candidate outcome.",
+                sourceMeetingTitle=meeting.title,
+                strength="related",
+                relation="new",
+                score=0.12,
+                snippet="The current development memory layer did not return a strong historical precedent.",
+                recordedAt=final_end,
+            )
         meeting.recentMemoryMatches.insert(0, memory_match)
         meeting.recentMemoryMatches = meeting.recentMemoryMatches[:6]
         meeting.metrics.memoryMatchesCount += 1
@@ -1213,7 +1195,7 @@ class MeetingStore:
                 id=f"evt_{uuid4().hex[:12]}",
                 kind="memory",
                 at=final_end,
-                title="Elastic memory match attached",
+                title="Memory match attached",
                 detail=f"{memory_match.summary} Source: {memory_match.sourceMeetingTitle}.",
             ),
         )
@@ -1852,6 +1834,167 @@ class MeetingStore:
             documents=documents,
         )
 
+    def _search_local_outcomes(
+        self,
+        *,
+        query: str,
+        record_type: str | None,
+        limit: int,
+    ) -> list[OutcomeSearchResult]:
+        """Keyword search over the in-memory indexed outcomes (Elastic fallback)."""
+        with self._lock:
+            documents = [
+                doc.model_copy(deep=True)
+                for doc in self._indexed_outcomes.values()
+            ]
+            meeting_titles = {
+                mid: m.title for mid, m in self._meetings.items()
+            }
+
+        if record_type:
+            documents = [doc for doc in documents if doc.recordType == record_type]
+
+        trimmed = query.strip().lower()
+        query_tokens = _tokenize(trimmed) if trimmed else []
+
+        scored: list[tuple[IndexedOutcomeDocument, float]] = []
+        for doc in documents:
+            meeting_title = meeting_titles.get(doc.meetingId, "")
+            if not query_tokens:
+                score = 0.5
+            else:
+                doc_tokens = _tokenize(
+                    f"{doc.summary} {doc.detail} {meeting_title} {doc.ownerLabel or ''}".lower()
+                )
+                overlap = len(query_tokens & doc_tokens)
+                if overlap == 0:
+                    continue
+                score = overlap / len(query_tokens)
+            scored.append((doc, score))
+
+        scored.sort(key=lambda pair: (pair[1], pair[0].updatedAt), reverse=True)
+
+        results = [
+            OutcomeSearchResult(
+                recordType=doc.recordType,
+                summary=doc.summary,
+                detail=doc.detail,
+                status=doc.status,
+                meetingId=doc.meetingId,
+                meetingTitle=meeting_titles.get(doc.meetingId, "Meeting"),
+                ownerLabel=doc.ownerLabel,
+                speakerLabel=doc.speakerLabel,
+                dueHint=doc.dueHint,
+                severity=doc.severity,
+                updatedAt=doc.updatedAt,
+                score=round(score, 4),
+            )
+            for doc, score in scored[:limit]
+        ]
+        return results
+
+    def _search_local_prior_outcomes(
+        self,
+        *,
+        current_meeting_id: str,
+        payload: SearchPriorOutcomesRequest,
+    ) -> list[MemoryMatch]:
+        """Cross-meeting memory search over the in-memory store (Elastic fallback).
+
+        Searches indexed outcomes from OTHER meetings so the reasoning agent
+        receives real historical context instead of hardcoded templates.
+        """
+        with self._lock:
+            documents = [
+                doc.model_copy(deep=True)
+                for (doc_meeting_id, _), doc in self._indexed_outcomes.items()
+                if doc_meeting_id != current_meeting_id
+            ]
+            meeting_titles = {
+                mid: m.title for mid, m in self._meetings.items()
+            }
+
+        candidates = [
+            doc for doc in documents if doc.recordType == payload.recordType
+        ]
+
+        query_tokens = _tokenize(f"{payload.summary} {payload.detail}".lower())
+        if not query_tokens:
+            return []
+
+        scored: list[tuple[IndexedOutcomeDocument, float]] = []
+        for doc in candidates:
+            meeting_title = meeting_titles.get(doc.meetingId, "")
+            doc_tokens = _tokenize(
+                f"{doc.summary} {doc.detail} {meeting_title}".lower()
+            )
+            overlap = len(query_tokens & doc_tokens)
+            if overlap == 0:
+                continue
+            score = min(overlap / len(query_tokens), 1.0)
+            scored.append((doc, score))
+
+        scored.sort(key=lambda pair: (pair[1], pair[0].updatedAt), reverse=True)
+
+        matches: list[MemoryMatch] = []
+        for doc, score in scored[:3]:
+            meeting_title = meeting_titles.get(doc.meetingId, "Prior meeting")
+            elastic_document = map_indexed_outcome_to_elastic_document(
+                meeting_title=meeting_title,
+                outcome=doc,
+            )
+            matches.append(
+                map_elastic_document_to_memory_match(
+                    document=elastic_document,
+                    score=score,
+                    recorded_at=doc.updatedAt,
+                )
+            )
+        return matches
+
+    def _find_local_memory_match_unlocked(
+        self,
+        *,
+        meeting_id: str,
+        query_text: str,
+    ) -> MemoryMatch | None:
+        """Find the best cross-meeting memory match (caller must hold the lock)."""
+        query_tokens = _tokenize(query_text.lower())
+        if not query_tokens:
+            return None
+
+        best_doc: IndexedOutcomeDocument | None = None
+        best_score = 0.0
+        best_title = ""
+
+        for (doc_meeting_id, _), doc in self._indexed_outcomes.items():
+            if doc_meeting_id == meeting_id:
+                continue
+            meeting = self._meetings.get(doc_meeting_id)
+            title = meeting.title if meeting else ""
+            doc_tokens = _tokenize(f"{doc.summary} {doc.detail} {title}".lower())
+            overlap = len(query_tokens & doc_tokens)
+            if overlap == 0:
+                continue
+            score = overlap / len(query_tokens)
+            if score > best_score:
+                best_score = score
+                best_doc = doc
+                best_title = title
+
+        if best_doc is None:
+            return None
+
+        elastic_document = map_indexed_outcome_to_elastic_document(
+            meeting_title=best_title,
+            outcome=best_doc,
+        )
+        return map_elastic_document_to_memory_match(
+            document=elastic_document,
+            score=min(best_score, 1.0),
+            recorded_at=best_doc.updatedAt,
+        )
+
     def _build_empty_memory_match(
         self,
         meeting: MeetingDetail,
@@ -2229,3 +2372,25 @@ def _keywords_for_memory_template(source_meeting_id: str) -> tuple[str, ...]:
     if "migration" in source_meeting_id:
         return ("migration", "staging", "rerun")
     return ("alert", "ownership", "handoff", "incident")
+
+
+_IGNORE_TOKENS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "is", "are", "was", "were",
+        "to", "in", "on", "at", "for", "of", "with", "by", "this", "that",
+        "it", "as", "be", "been", "being", "have", "has", "had", "do",
+        "does", "did", "will", "would", "should", "could", "may", "might",
+        "can", "shall", "not", "no", "if", "then", "else", "so", "than",
+    }
+)
+
+
+def _tokenize(text: str) -> set[str]:
+    """Split text into meaningful lowercase tokens, dropping stop words."""
+    tokens: set[str] = set()
+    for raw in text.split():
+        token = raw.strip(".,;:!?'\"()[]{}").lower()
+        if len(token) < 2 or token in _IGNORE_TOKENS:
+            continue
+        tokens.add(token)
+    return tokens
