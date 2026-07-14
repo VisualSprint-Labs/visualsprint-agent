@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from urllib import error, parse, request
 
 from visualsprint_api.config import Settings
@@ -18,6 +19,8 @@ from visualsprint_api.models import (
     MemoryMatch,
     SearchPriorOutcomesRequest,
 )
+
+logger = logging.getLogger("visualsprint_api.elastic")
 
 
 def upsert_indexed_outcomes_to_elasticsearch(
@@ -206,14 +209,15 @@ def _elastic_request_json(
     path: str,
     payload: dict,
 ) -> dict | None:
-    if not config.elasticsearch_url or not config.elasticsearch_api_key_secret:
+    api_key = config.elasticsearch_api_key or config.elasticsearch_api_key_secret
+    if not config.elasticsearch_url or not api_key:
         return None
 
     base_url = config.elasticsearch_url.rstrip("/")
     url = f"{base_url}{path}"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"ApiKey {config.elasticsearch_api_key_secret}",
+        "Authorization": f"ApiKey {api_key}",
     }
     try:
         response = request.urlopen(
@@ -226,5 +230,23 @@ def _elastic_request_json(
             timeout=config.service_request_timeout_seconds,
         )
         return json.loads(response.read().decode("utf-8"))
-    except (error.URLError, error.HTTPError, json.JSONDecodeError):
+    except error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            pass
+        logger.warning(
+            "Elasticsearch %s %s returned HTTP %s: %s",
+            method,
+            path,
+            exc.code,
+            body,
+        )
+        return None
+    except (error.URLError, TimeoutError) as exc:
+        logger.warning("Elasticsearch %s %s failed: %s", method, path, exc)
+        return None
+    except json.JSONDecodeError as exc:
+        logger.warning("Elasticsearch %s %s returned invalid JSON: %s", method, path, exc)
         return None
