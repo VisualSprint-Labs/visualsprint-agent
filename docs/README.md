@@ -4,6 +4,7 @@ Detailed product, architecture, and hackathon guidance currently lives in the ro
 
 Supplementary documentation:
 
+- [Feature guides](./feature-guides/README.md)
 - [Google Cloud Agent Builder plan](./google-cloud-agent-builder.md)
 - [ChatGPT prompts for agent creation](./agent-creation-chatgpt-prompts.md)
 - [Capture constraints and plan](./capture-constraints-and-plan.md)
