@@ -77,7 +77,7 @@ class Settings:
     jira_project_key: str | None = None
     slack_bot_token: str | None = None
     slack_default_channel: str | None = None
-    service_request_timeout_seconds: float = 0.5
+    service_request_timeout_seconds: float = 5.0
     google_cloud_project: str | None = None
     google_cloud_location: str = "us-central1"
     vision_model: str = "gemini-2.5-flash"
@@ -182,7 +182,7 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         slack_bot_token=_get(source, "SLACK_BOT_TOKEN_SECRET"),
         slack_default_channel=_get(source, "SLACK_DEFAULT_CHANNEL"),
         service_request_timeout_seconds=float(
-            source.get("VISUALSPRINT_SERVICE_TIMEOUT_SECONDS", "0.5")
+            source.get("VISUALSPRINT_SERVICE_TIMEOUT_SECONDS", "5.0")
         ),
         google_cloud_project=_get_any(
             source,

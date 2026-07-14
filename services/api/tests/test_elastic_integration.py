@@ -86,3 +86,46 @@ def test_elastic_document_mapping_can_build_memory_match():
     assert match.sourceMeetingTitle == "Release planning"
     assert match.relation == "resolved_previously"
     assert match.strength == "recurring"
+
+
+def test_elastic_client_uses_resolved_api_key_for_authorization(monkeypatch):
+    """The ApiKey header must use the resolved key value, not the secret name."""
+
+    from urllib import request as urllib_request
+
+    from visualsprint_api.elastic_client import _elastic_request_json
+
+    config = build_settings(
+        {
+            "ELASTICSEARCH_URL": "https://elastic.example",
+            "ELASTICSEARCH_API_KEY": "resolved-key-value",
+            "ELASTICSEARCH_API_KEY_SECRET": "secret-name-placeholder",
+            "ELASTIC_INDEX_OUTCOMES": "test-index",
+        }
+    )
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        captured["method"] = req.get_method()
+        return FakeResponse()
+
+    monkeypatch.setattr(urllib_request, "urlopen", fake_urlopen)
+
+    result = _elastic_request_json(
+        config=config,
+        method="POST",
+        path="/test-index/_search",
+        payload={"query": {"match_all": {}}},
+    )
+
+    assert result == {"ok": True}
+    auth_header = captured["headers"].get("Authorization", "")
+    assert auth_header == "ApiKey resolved-key-value"
+    assert "secret-name-placeholder" not in auth_header

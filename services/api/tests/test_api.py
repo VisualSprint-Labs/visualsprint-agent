@@ -386,6 +386,91 @@ def test_search_prior_outcomes_can_use_elasticsearch_when_configured(
     assert payload["matches"][0]["relation"] == "recurring"
 
 
+def test_knowledge_search_falls_back_to_local_outcomes_when_elastic_unconfigured(
+    client: TestClient,
+):
+    """Knowledge search must return local in-memory results, not available=False."""
+
+    meeting_id = _create_live_browser_meeting(client)
+    _start_capture_session(client, meeting_id)
+    _register_chunk(client, meeting_id, "client-chunk-knowledge-001", sequence=1)
+    _process_chunk(client, meeting_id, "client-chunk-knowledge-001")
+
+    response = client.get("/api/knowledge/search", params={"q": "release"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["total"] > 0
+    assert any("release" in r["summary"].lower() for r in payload["results"])
+
+
+def test_knowledge_search_local_fallback_filters_by_record_type(client: TestClient):
+    meeting_id = _create_live_browser_meeting(client)
+    _start_capture_session(client, meeting_id)
+    _register_chunk(client, meeting_id, "client-chunk-filter-001", sequence=1)
+    _process_chunk(client, meeting_id, "client-chunk-filter-001")
+
+    response = client.get(
+        "/api/knowledge/search",
+        params={"q": "", "recordType": "decision"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["total"] > 0
+    assert all(r["recordType"] == "decision" for r in payload["results"])
+
+
+def test_search_prior_outcomes_uses_local_cross_meeting_data_when_elastic_unconfigured(
+    client: TestClient,
+):
+    """Memory search must return real cross-meeting outcomes, not hardcoded templates."""
+
+    meeting_a = _create_live_browser_meeting(client)
+    _start_capture_session(client, meeting_a)
+    _register_chunk(client, meeting_a, "client-chunk-prior-a1", sequence=1)
+    _process_chunk(client, meeting_a, "client-chunk-prior-a1")
+
+    meeting_b = _create_live_browser_meeting(client)
+
+    response = client.post(
+        f"/api/meetings/{meeting_b}/memory/search-prior-outcomes",
+        json={
+            "recordType": "blocker",
+            "summary": "Auth configuration drift is still blocking the release candidate",
+            "detail": "The auth configuration drift is blocking the release.",
+        },
+    )
+
+    assert response.status_code == 200
+    matches = response.json()["matches"]
+    assert len(matches) > 0
+    assert matches[0]["sourceMeetingId"] == meeting_a
+    assert matches[0]["sourceMeetingId"] != "mtg_hist_auth_01"
+
+
+def test_search_prior_outcomes_returns_new_when_no_cross_meeting_data(
+    client: TestClient,
+):
+    """With no prior meetings, memory search should honestly report 'new'."""
+
+    meeting_id = _create_live_browser_meeting(client)
+
+    response = client.post(
+        f"/api/meetings/{meeting_id}/memory/search-prior-outcomes",
+        json={
+            "recordType": "blocker",
+            "summary": "A completely novel deployment issue",
+            "detail": "Something entirely unprecedented happened.",
+        },
+    )
+
+    assert response.status_code == 200
+    matches = response.json()["matches"]
+    assert len(matches) == 1
+    assert matches[0]["relation"] == "new"
+
+
 def test_repeated_agent_outputs_update_existing_records_instead_of_duplicating(client: TestClient):
     meeting_id = _create_live_browser_meeting(client)
     _start_capture_session(client, meeting_id)

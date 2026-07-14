@@ -407,7 +407,12 @@ def test_elastic_mcp_tool_can_parse_structured_content_response(monkeypatch):
     monkeypatch.setattr(
         elastic_mcp_module,
         "_mcp_request",
-        lambda **kwargs: next(responses),
+        lambda **kwargs: (next(responses), {}),
+    )
+    monkeypatch.setattr(
+        elastic_mcp_module,
+        "_mcp_notify",
+        lambda **kwargs: None,
     )
 
     result = search_prior_outcomes(
@@ -422,6 +427,67 @@ def test_elastic_mcp_tool_can_parse_structured_content_response(monkeypatch):
     assert result["matches"][0]["sourceMeetingId"] == "mtg_hist_auth_01"
     assert result["matches"][0]["relation"] == "recurring"
     assert "Elastic MCP returned" in result["note"]
+
+
+def test_elastic_mcp_client_threads_session_id_to_tools_call(monkeypatch):
+    """The Mcp-Session-Id from initialize must be sent on tools/call."""
+
+    monkeypatch.setattr(
+        elastic_mcp_module,
+        "settings",
+        build_settings(
+            {
+                "VISUALSPRINT_ELASTIC_MCP_ENDPOINT": "https://elastic.example/mcp",
+                "VISUALSPRINT_ELASTIC_API_KEY": "elastic-api-key-value",
+            }
+        ),
+    )
+
+    captured_calls: list[dict] = []
+
+    init_body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "capabilities": {},
+            "protocolVersion": "2024-11-05",
+            "serverInfo": {"name": "elastic-mcp", "version": "0.0.1"},
+        },
+    }
+    init_headers = {"Mcp-Session-Id": "test-session-abc-123"}
+
+    tool_body = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+            "structuredContent": {
+                "matches": [],
+                "note": "No matches found.",
+            }
+        },
+    }
+    responses = iter([(init_body, init_headers), (tool_body, {})])
+
+    def fake_mcp_request(**kwargs):
+        captured_calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(elastic_mcp_module, "_mcp_request", fake_mcp_request)
+    monkeypatch.setattr(elastic_mcp_module, "_mcp_notify", lambda **kwargs: None)
+
+    result = search_prior_outcomes(
+        recordType="blocker",
+        summary="Auth drift",
+        detail="Release path blocked",
+    )
+
+    assert result["status"] == "ok"
+    assert len(captured_calls) == 2
+    assert captured_calls[0]["method"] == "initialize"
+    assert captured_calls[1]["method"] == "tools/call"
+    assert captured_calls[1].get("extra_headers") == {
+        "Mcp-Session-Id": "test-session-abc-123"
+    }
 
 
 def test_vertex_normalization_handles_multiple_response_shapes():

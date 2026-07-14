@@ -109,7 +109,7 @@ class Settings:
     agent_bridge_bearer_token: str | None = None
     agent_bridge_bearer_token_secret_name: str | None = None
     agent_runtime_service_account: str | None = None
-    agent_request_timeout_seconds: float = 2.0
+    agent_request_timeout_seconds: float = 10.0
     elastic_mcp_endpoint: str | None = None
     elastic_api_key: str | None = None
     elastic_api_key_secret_name: str | None = None
@@ -335,7 +335,7 @@ def build_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ),
         agent_runtime_service_account=_get(source, "VISUALSPRINT_AGENT_RUNTIME_SERVICE_ACCOUNT"),
         agent_request_timeout_seconds=float(
-            source.get("VISUALSPRINT_AGENT_REQUEST_TIMEOUT_SECONDS", "2.0")
+            source.get("VISUALSPRINT_AGENT_REQUEST_TIMEOUT_SECONDS", "10.0")
         ),
         elastic_mcp_endpoint=_get_any(
             source,
