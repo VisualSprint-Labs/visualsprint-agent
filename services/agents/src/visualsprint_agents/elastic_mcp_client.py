@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from urllib import error, request
 
 from visualsprint_agents.config import settings
+
+logger = logging.getLogger("visualsprint_agents.elastic_mcp")
+
+_MCP_ACCEPT = "application/json, text/event-stream"
 
 
 def call_search_prior_outcomes_tool(
@@ -39,7 +44,7 @@ def call_search_prior_outcomes_tool(
             ),
         )
 
-    initialize_response = _mcp_request(
+    init_body, init_headers = _mcp_request(
         method="initialize",
         params={
             "capabilities": {},
@@ -51,7 +56,7 @@ def call_search_prior_outcomes_tool(
         },
         request_id=1,
     )
-    if initialize_response is None:
+    if init_body is None:
         return _unavailable(
             record_type=record_type,
             summary=summary,
@@ -61,7 +66,17 @@ def call_search_prior_outcomes_tool(
             note="Elastic MCP initialize request failed; no historical matches were returned.",
         )
 
-    tool_response = _mcp_request(
+    session_id = init_headers.get("Mcp-Session-Id")
+    if session_id:
+        _mcp_notify(
+            method="notifications/initialized",
+            session_id=session_id,
+        )
+
+    extra_headers: dict[str, str] | None = (
+        {"Mcp-Session-Id": session_id} if session_id else None
+    )
+    tool_body, _ = _mcp_request(
         method="tools/call",
         params={
             "name": "search_prior_outcomes",
@@ -74,8 +89,9 @@ def call_search_prior_outcomes_tool(
             },
         },
         request_id=2,
+        extra_headers=extra_headers,
     )
-    if tool_response is None:
+    if tool_body is None:
         return _unavailable(
             record_type=record_type,
             summary=summary,
@@ -85,7 +101,7 @@ def call_search_prior_outcomes_tool(
             note="Elastic MCP tool invocation failed; no historical matches were returned.",
         )
 
-    parsed = _extract_tool_matches(tool_response)
+    parsed = _extract_tool_matches(tool_body)
     if parsed is None:
         return _unavailable(
             record_type=record_type,
@@ -113,9 +129,16 @@ def call_search_prior_outcomes_tool(
     }
 
 
-def _mcp_request(*, method: str, params: dict[str, Any], request_id: int) -> dict[str, Any] | None:
+def _mcp_request(
+    *,
+    method: str,
+    params: dict[str, Any],
+    request_id: int,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, str]]:
+    """Send a JSON-RPC request and return (body, response_headers)."""
     if not settings.elastic_mcp_endpoint or not settings.elastic_api_key:
-        return None
+        return None, {}
 
     payload = {
         "jsonrpc": "2.0",
@@ -123,23 +146,91 @@ def _mcp_request(*, method: str, params: dict[str, Any], request_id: int) -> dic
         "method": method,
         "params": params,
     }
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": _MCP_ACCEPT,
+        "Authorization": f"ApiKey {settings.elastic_api_key}",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         response = request.urlopen(
             request.Request(
                 url=settings.elastic_mcp_endpoint,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"ApiKey {settings.elastic_api_key}",
-                },
+                headers=headers,
                 method="POST",
             ),
             timeout=settings.agent_request_timeout_seconds,
         )
-        decoded = json.loads(response.read().decode("utf-8"))
-        return decoded if isinstance(decoded, dict) else None
-    except (error.URLError, error.HTTPError, json.JSONDecodeError):
+        response_headers = {k: v for k, v in response.headers.items()}
+        body = _parse_mcp_response(response)
+        return body, response_headers
+    except error.HTTPError as exc:
+        logger.warning("MCP %s request returned HTTP %s", method, exc.code)
+        return None, {}
+    except (error.URLError, TimeoutError) as exc:
+        logger.warning("MCP %s request failed: %s", method, exc)
+        return None, {}
+    except Exception as exc:
+        logger.warning("MCP %s request raised: %s", method, exc)
+        return None, {}
+
+
+def _mcp_notify(*, method: str, session_id: str) -> None:
+    """Send a fire-and-forget MCP notification (no response expected)."""
+    if not settings.elastic_mcp_endpoint or not settings.elastic_api_key:
+        return
+    payload = {"jsonrpc": "2.0", "method": method}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": _MCP_ACCEPT,
+        "Authorization": f"ApiKey {settings.elastic_api_key}",
+        "Mcp-Session-Id": session_id,
+    }
+    try:
+        request.urlopen(
+            request.Request(
+                url=settings.elastic_mcp_endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            ),
+            timeout=min(settings.agent_request_timeout_seconds, 5.0),
+        )
+    except Exception:
+        pass
+
+
+def _parse_mcp_response(response) -> dict[str, Any] | None:
+    """Parse a JSON-RPC response body, handling both JSON and SSE."""
+    content_type = response.headers.get("Content-Type", "")
+    raw = response.read().decode("utf-8")
+    if "text/event-stream" in content_type:
+        return _parse_sse_payload(raw)
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("MCP response was not valid JSON")
         return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _parse_sse_payload(raw: str) -> dict[str, Any] | None:
+    """Extract the first JSON-RPC message from an SSE stream."""
+    for block in raw.split("\n\n"):
+        for line in block.strip().splitlines():
+            if line.startswith("data:"):
+                data = line[5:].strip()
+                if not data:
+                    continue
+                try:
+                    decoded = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(decoded, dict):
+                    return decoded
+    return None
 
 
 def _extract_tool_matches(response: dict[str, Any]) -> dict[str, Any] | None:
